@@ -2,7 +2,7 @@ import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 
 const receptionistRoutes = [
   {
-    path: "/receptionist/dashboard",
+    path: "/reception/dashboard",
     element: <ReceptionistDashboard />,
   },
 ];

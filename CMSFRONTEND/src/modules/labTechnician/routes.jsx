@@ -2,7 +2,7 @@ import LabTechnicianDashboard from "./pages/LabTechnicianDashboard";
 
 const labRoutes = [
   {
-    path: "/lab/dashboard",
+    path: "/labtechnician/dashboard",
     element: <LabTechnicianDashboard />,
   },
 ];

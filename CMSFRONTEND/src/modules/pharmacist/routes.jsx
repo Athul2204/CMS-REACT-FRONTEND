@@ -1,10 +1,10 @@
 import PharmacistDashboard from "./pages/PharmacistDashboard";
 
-const pharmacyRoutes = [
+const pharmacistRoutes = [
   {
-    path: "/pharmacy/dashboard",
+    path: "/pharmacist/dashboard",
     element: <PharmacistDashboard />,
   },
 ];
 
-export default pharmacyRoutes;
+export default pharmacistRoutes;

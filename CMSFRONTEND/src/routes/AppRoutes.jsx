@@ -5,7 +5,10 @@ import ProtectedRoute from "./ProtectedRoute";
 
 import doctorRoutes from "../modules/doctor/routes";
 import LandingPage from "../pages/LandingPage";
-
+import receptionistRoutes from "../modules/receptionist/routes";
+import pharmacistRoutes from "../modules/pharmacist/routes";
+import adminRoutes from "../modules/admin/routes";
+import labRoutes from "../modules/labTechnician/routes";
 function AppRoutes() {
   return (
     <Routes>
@@ -26,7 +29,55 @@ function AppRoutes() {
           }
         />
       ))}
+      {receptionistRoutes.map((route, index) => (
+        <Route
+          key={index}
+          path={route.path}
+          element={
+            <ProtectedRoute allowedRole="receptionist">
+              {route.element}
+            </ProtectedRoute>
+          }
+        />
+      ))}
 
+      {pharmacistRoutes.map((route, index) => (
+        <Route
+          key={index}
+          path={route.path}
+          element={
+            <ProtectedRoute allowedRole="pharmacist">
+              {route.element}
+            </ProtectedRoute>
+          }
+        />
+      ))}
+
+      {adminRoutes.map((route, index) => (
+        <Route
+          key={index}
+          path={route.path}
+          element={
+            <ProtectedRoute allowedRole="admin">
+              {route.element}
+            </ProtectedRoute>
+          }
+        />
+      ))}
+
+      {labRoutes.map((route, index) => (
+        <Route
+          key={index}
+          path={route.path}
+          element={
+            <ProtectedRoute allowedRole="labtechnician">
+              {route.element}
+            </ProtectedRoute>
+          }
+        />
+      ))}
+
+      
     </Routes>
   );
 }
