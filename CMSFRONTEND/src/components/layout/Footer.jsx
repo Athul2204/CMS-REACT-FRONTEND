@@ -1,49 +1,60 @@
 import React from "react";
+import { FaFacebookF, FaTwitter, FaInstagram, FaLinkedinIn } from "react-icons/fa";
 
 const Footer = () => {
   return (
-    <div className="w-full bg-gradient-to-r from-blue-700 to-blue-500 text-white py-12 flex justify-center">
+    <footer className="w-full bg-[#1B4360] text-white font-poppins">
 
-      <div className="w-[90%] grid grid-cols-1 md:grid-cols-3 gap-10">
+      {/* Main Row */}
+      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4 text-sm md:text-base">
 
-        {/* About */}
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Sheeps Hospital</h2>
-          <p className="text-gray-200">
-            Providing world-class healthcare services with compassion and care.
-            Your health is our priority.
-          </p>
+        {/* Left */}
+        <div className="flex items-center gap-4">
+          <h2 className="font-bold text-[#D4AF37] text-lg">MediCare+</h2>
+          <span className="hidden sm:block text-white">
+            Compassionate Healthcare
+          </span>
         </div>
 
-        {/* Quick Links */}
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Quick Links</h2>
-          <ul className="space-y-2 text-gray-200">
-            <li className="hover:text-white cursor-pointer">Home</li>
-            <li className="hover:text-white cursor-pointer">About</li>
-            <li className="hover:text-white cursor-pointer">Doctors</li>
-            <li className="hover:text-white cursor-pointer">Services</li>
-            <li className="hover:text-white cursor-pointer">Contact</li>
-          </ul>
+        {/* Center */}
+        <div className="flex flex-wrap justify-center gap-5 font-medium">
+          {["Home", "About", "Specialities", "Doctors", "Facilities", "Contact"].map((item) => (
+            <a
+              key={item}
+              href={`#${item.toLowerCase()}`}
+              className="text-white hover:text-[#D4AF37] transition"
+            >
+              {item}
+            </a>
+          ))}
         </div>
 
-        {/* Contact */}
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Contact Us</h2>
-          <p className="text-gray-200 mb-2">📍 Kochi, Kerala</p>
-          <p className="text-gray-200 mb-2">📞 +91 98765 43210</p>
-          <p className="text-gray-200">✉️ info@sheepshospital.com</p>
-        </div>
+        {/* Right */}
+        <div className="flex items-center gap-4">
+          <span className="hidden md:block text-white">📍 Kochi</span>
+          <span className="hidden md:block text-white">📞 +91 98765 43210</span>
 
+          {[FaFacebookF, FaTwitter, FaInstagram, FaLinkedinIn].map((Icon, i) => (
+            <a
+              key={i}
+              href="#"
+              className="text-white hover:text-[#D4AF37] transition text-lg"
+            >
+              <Icon />
+            </a>
+          ))}
+        </div>
       </div>
 
-      {/* Bottom Line */}
-      <div className="absolute bottom-0 w-full text-center text-gray-300 text-sm pb-4">
-        © 2026 Sheeps Hospital. All rights reserved.
+      {/* Thin Copyright Row */}
+      <div className="border-t border-white/10 text-center text-xs text-gray-300 py-1">
+        © 2026 MediCare+. All rights reserved.
       </div>
 
-    </div>
+    </footer>
   );
 };
 
 export default Footer;
+
+// #CMSFRONTEND\src\components\layout\Footer.jsx
