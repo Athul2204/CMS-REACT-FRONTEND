@@ -53,5 +53,3 @@ const SupportSection = () => {
 };
 
 export default SupportSection;
-
-// 
