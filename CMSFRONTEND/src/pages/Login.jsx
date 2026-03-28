@@ -1,75 +1,91 @@
-import React, { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useState } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
-const Login = () => {
-  const { login } = useAuth();
+export default function Login() {
+  const navigate = useNavigate();
 
-  const [formData, setFormData] = useState({
+  const [form, setForm] = useState({
     username: "",
-    password: "",
+    password: ""
   });
 
-  // 🔹 handle input change
+  const [loading, setLoading] = useState(false);
+
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // 🔹 handle submit
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    await login(formData);
-  };
+  const handleLogin = async () => {
+  if (!form.username || !form.password) {
+    alert("Please fill all fields");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const res = await axios.post(
+      "http://127.0.0.1:8000/api/login/",
+      form
+    );
+
+    console.log("LOGIN RESPONSE:", res.data); // ✅ debug
+
+    // ✅ Save token + role
+    localStorage.setItem("token", res.data.token);
+    localStorage.setItem("role", res.data.role);
+
+    const role = res.data.role?.toLowerCase(); // ✅ important
+
+    // ✅ Role-based navigation (FIXED)
+    if (role === "admin") navigate("/admin");
+    else if (role === "doctor") navigate("/doctor");
+    else if (role === "receptionist") navigate("/receptionist");
+    else navigate("/");
+
+  } catch (err) {
+    console.error(err);
+    alert("Invalid username or password");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-100 to-blue-200">
+    <div className="flex justify-center items-center min-h-screen bg-gray-100">
 
-      <div className="bg-white p-8 rounded-xl shadow-lg w-[350px]">
+      <div className="bg-white p-8 rounded-lg shadow-md w-80">
 
-        <h2 className="text-2xl font-bold text-center mb-6 text-blue-600">
+        <h2 className="text-2xl font-bold mb-6 text-center text-blue-600">
           Login
         </h2>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <input
+          name="username"
+          placeholder="Username"
+          onChange={handleChange}
+          className="border p-2 w-full mb-4 rounded"
+        />
 
-          {/* Username */}
-          <input
-            type="text"
-            name="username"
-            placeholder="Enter Username"
-            value={formData.username}
-            onChange={handleChange}
-            className="border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
+        <input
+          name="password"
+          type="password"
+          placeholder="Password"
+          onChange={handleChange}
+          className="border p-2 w-full mb-4 rounded"
+        />
 
-          {/* Password */}
-          <input
-            type="password"
-            name="password"
-            placeholder="Enter Password"
-            value={formData.password}
-            onChange={handleChange}
-            className="border p-3 rounded-lg outline-none focus:ring-2 focus:ring-blue-400"
-            required
-          />
-
-          {/* Login Button */}
-          <button
-            type="submit"
-            className="bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
-          >
-            Login
-          </button>
-
-        </form>
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="bg-blue-500 text-white w-full py-2 rounded hover:bg-blue-600 transition"
+        >
+          {loading ? "Logging in..." : "Login"}
+        </button>
 
       </div>
 
     </div>
   );
-};
-
-export default Login;
+}
