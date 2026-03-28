@@ -1,19 +1,10 @@
-import { Routes, Route } from "react-router-dom";
+import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 
-import ReceptionDashboard from "./pages/ReceptionDashboard";
-import PatientList from "./pages/PatientList";
-import AddPatient from "./pages/AddPatient";
-import DoctorAvailability from "./pages/DoctorAvailability";
+const receptionistRoutes = [
+  {
+    path: "/reception/dashboard",
+    element: <ReceptionistDashboard />,
+  },
+];
 
-const ReceptionRoutes = () => {
-  return (
-    <Routes>
-      <Route path="/" element={<ReceptionDashboard />} />
-      <Route path="patients" element={<PatientList />} />
-      <Route path="add-patient" element={<AddPatient />} />
-      <Route path="availability" element={<DoctorAvailability />} />
-    </Routes>
-  );
-};
-
-export default ReceptionRoutes;
+export default receptionistRoutes;
