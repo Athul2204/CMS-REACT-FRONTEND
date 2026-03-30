@@ -1,3 +1,4 @@
+
 import DoctorDashboard from "./pages/DoctorDashboard";
 import ConsultationPage from "./pages/ConsultationPage";
 
@@ -13,3 +14,5 @@ const doctorRoutes = [
 ];
 
 export default doctorRoutes;
+
+

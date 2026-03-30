@@ -1,3 +1,4 @@
+
 import ReceptionistDashboard from "./pages/ReceptionistDashboard";
 
 const receptionistRoutes = [

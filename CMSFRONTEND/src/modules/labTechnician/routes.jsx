@@ -8,3 +8,4 @@ const labRoutes = [
 ];
 
 export default labRoutes;
+
