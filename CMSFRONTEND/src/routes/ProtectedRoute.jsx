@@ -4,14 +4,14 @@ import { useAuth } from "../context/AuthContext";
 const ProtectedRoute = ({ children, allowedRole }) => {
   const { token, user } = useAuth();
 
-  // ❌ Not logged in
-  if (!token) {
+  // ❌ Not logged in (both missing)
+  if (!token && !user) {
     return <Navigate to="/login" replace />;
   }
 
-  // ❌ If user not loaded yet (edge case safety)
+  // ⏳ User loading (prevent flicker)
   if (!user) {
-    return null; // or loading spinner
+    return null; // or spinner
   }
 
   // ❌ Role mismatch

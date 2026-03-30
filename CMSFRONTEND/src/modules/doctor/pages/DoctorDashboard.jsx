@@ -3,10 +3,13 @@ import DashboardHeader from "../components/DashboardHeader";
 import StatsCards from "../components/StatsCards";
 import PatientsTable from "../components/PatientsTable";
 import { getTodayAppointments } from "../api/doctorApi";
+import { useAuth } from "../../../context/AuthContext";
+import { FaUserMd } from "react-icons/fa";
 
 const DoctorDashboard = () => {
 
-  // ✅ State
+  const { user } = useAuth();
+
   const [appointments, setAppointments] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -15,7 +18,6 @@ const DoctorDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  // 🔥 API Call
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -23,10 +25,8 @@ const DoctorDashboard = () => {
 
         const data = res.data || [];
 
-        // ✅ Set appointments
         setAppointments(data);
 
-        // ✅ Calculate stats
         const total = res.count || 0;
 
         const completed = data.filter(
@@ -51,35 +51,69 @@ const DoctorDashboard = () => {
     fetchData();
   }, []);
 
-  // 🔄 Loading state
+  // 🔄 Loading UI
   if (loading) {
     return (
-      <div className="p-6 text-center text-gray-500">
+      <div className="
+        min-h-screen flex items-center justify-center
+        bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e293b]
+        text-white/80 text-lg
+      ">
         Loading dashboard...
       </div>
     );
   }
 
+  const doctorName = user?.first_name || user?.username || "Doctor";
+
   return (
-    <div className="p-6 bg-gray-100 min-h-screen space-y-6">
+    <div className="
+      min-h-screen md:h-screen
+      overflow-auto md:overflow-hidden
+      bg-gradient-to-br from-[#0f172a] via-[#111827] to-[#1e293b]
+      p-2 md:p-3
+    ">
 
-      {/* 🔥 Header */}
-      <DashboardHeader />
+      {/* 🌈 MAIN CONTAINER */}
+      <div className="
+        h-full flex flex-col
+        rounded-xl
+        border border-white/10
+        bg-[#1e293b]
+        p-2 md:p-3   /* 🔥 reduced padding */
+      ">
 
-      {/* 🔥 Welcome */}
-      <h1 className="text-2xl font-bold text-gray-700">
-        Welcome Doctor 👋
-      </h1>
+        {/* 🔝 TOP SECTION */}
+        <div className="flex flex-col gap-2 flex-shrink-0">  {/* 🔥 reduced gap */}
 
-      {/* 🔥 Stats */}
-      <StatsCards
-        total={stats.total}
-        completed={stats.completed}
-        remaining={stats.remaining}
-      />
+          {/* Header */}
+          <DashboardHeader />
 
-      {/* 🔥 Patients */}
-      <PatientsTable appointments={appointments} />
+          {/* Welcome */}
+          <h1 className="
+            flex items-center gap-2
+            text-md md:text-lg font-semibold   /* 🔥 reduced size */
+            text-white tracking-wide
+          ">
+            Welcome Dr. {doctorName}
+            <FaUserMd className="text-blue-400 text-2xl md:text-3xl" />
+          </h1>
+
+          {/* Stats */}
+          <StatsCards
+            total={stats.total}
+            completed={stats.completed}
+            remaining={stats.remaining}
+          />
+
+        </div>
+
+        {/* 📊 TABLE SECTION */}
+        <div className="flex-1 min-h-0 mt-1">  {/* 🔥 reduced margin */}
+          <PatientsTable appointments={appointments} />
+        </div>
+
+      </div>
 
     </div>
   );
