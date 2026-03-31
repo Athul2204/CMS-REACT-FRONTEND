@@ -8,7 +8,9 @@ import {
   getMedicines,
   getLabTests,
   getLabResults,
+  markLabResultsViewed,
 } from "../api/doctorApi";
+import API from "../../../api";
 
 // ─── CARD COMPONENTS ─────────────────────────────────────────────
 const Card = ({ children, className = "" }) => (
@@ -448,11 +450,14 @@ const PrescriptionForm = ({ consultationId, doctorId, onSaved, onClose }) => {
   );
 };
 
-// ─── LAB RESULTS PANEL ────────────────────────────────────────────
-const LabResultsPanel = ({ consultationId, onClose }) => {
+// ─── LAB RESULTS PANEL (with Mark as Viewed) ─────────────────────
+const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed: initialViewed, onClose, onMarkedViewed }) => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [marking, setMarking] = useState(false);
+  const [viewed, setViewed] = useState(initialViewed);
+  const [markError, setMarkError] = useState("");
 
   useEffect(() => {
     if (!consultationId) return;
@@ -461,6 +466,21 @@ const LabResultsPanel = ({ consultationId, onClose }) => {
       .catch(() => setError("Failed to load lab results."))
       .finally(() => setLoading(false));
   }, [consultationId]);
+
+  const handleMarkViewed = async () => {
+    if (!labRequestId) return;
+    setMarking(true);
+    setMarkError("");
+    try {
+      await markLabResultsViewed(labRequestId);
+      setViewed(true);
+      if (onMarkedViewed) onMarkedViewed();
+    } catch (err) {
+      setMarkError(err?.response?.data?.message || "Failed to mark as viewed.");
+    } finally {
+      setMarking(false);
+    }
+  };
 
   return (
     <Card>
@@ -508,6 +528,36 @@ const LabResultsPanel = ({ consultationId, onClose }) => {
                 </div>
               </div>
             ))}
+
+            {/* ── MARK AS VIEWED ── */}
+            <div className="pt-3 border-t border-[#1e2d4a]">
+              {markError && (
+                <div className="mb-3 bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-2 rounded-lg">{markError}</div>
+              )}
+              <div className="flex items-center gap-3">
+                {viewed ? (
+                  <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
+                    <span className="text-lg">✅</span>
+                    <span>Results marked as reviewed</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleMarkViewed}
+                    disabled={marking}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-cyan-300 text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                  >
+                    {marking && <span className="w-3.5 h-3.5 border-2 border-cyan-300/30 border-t-cyan-300 rounded-full animate-spin" />}
+                    {marking ? "Marking…" : "✔ Mark as Viewed"}
+                  </button>
+                )}
+                <p className="text-xs text-gray-500">
+                  {viewed
+                    ? "You can now write a prescription for this patient."
+                    : "Acknowledge that you have reviewed all lab results."}
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -608,8 +658,11 @@ const ConsultationPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // null | "consultation" | "lab" | "prescription" | "labResults"
   const [activeForm, setActiveForm] = useState(null);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState("");
+  const [completeSuccess, setCompleteSuccess] = useState(false);
+  const [localLabViewed, setLocalLabViewed] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -617,6 +670,7 @@ const ConsultationPage = () => {
     try {
       const res = await getConsultationPage(appointmentId);
       setData(res.data);
+      setLocalLabViewed(res.data?.lab_results_viewed || false);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load consultation data.");
     } finally {
@@ -631,6 +685,24 @@ const ConsultationPage = () => {
   const handleFormSaved = () => {
     setActiveForm(null);
     fetchData();
+  };
+
+  const handleCompleteConsultation = async () => {
+    setCompleting(true);
+    setCompleteError("");
+    try {
+      await API.patch(`/api/doctor/consultation/${appointmentId}/complete/`);
+      setCompleteSuccess(true);
+      fetchData();
+    } catch (err) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.detail ||
+        "Failed to complete consultation.";
+      setCompleteError(msg);
+    } finally {
+      setCompleting(false);
+    }
   };
 
   if (loading) {
@@ -666,6 +738,18 @@ const ConsultationPage = () => {
   const labResults = data.lab_results || [];
   const hasLabResults = labResults.length > 0;
   const hasCriticalResult = labResults.some((r) => r.is_critical);
+  const labRequestId = data.lab_request_id;
+  const labResultsViewed = localLabViewed || data.lab_results_viewed || false;
+  const isCompleted = data.appointment?.status === "Completed";
+
+  // Detect if a prescription has been written for this consultation.
+  // The backend exposes previous_prescriptions scoped to the patient;
+  // we also check a potential flag from the consultation itself.
+  const hasPrescription =
+    data.current_consultation?.has_prescription ||
+    (data.previous_prescriptions || []).some(
+      (rx) => rx.consultation === consultationId || rx.consultation_id === consultationId
+    );
 
   return (
     <div className="min-h-screen bg-[#060d1a] p-4 md:p-6">
@@ -682,7 +766,27 @@ const ConsultationPage = () => {
         <span className="text-gray-300 text-sm">
           Consultation — Token #{data.appointment?.token_number}
         </span>
+        {isCompleted && (
+          <span className="ml-2 text-xs bg-green-400/10 text-green-400 border border-green-400/30 px-2 py-0.5 rounded-full font-medium">
+            ✓ Completed
+          </span>
+        )}
       </div>
+
+      {/* COMPLETE SUCCESS BANNER */}
+      {completeSuccess && (
+        <div className="mb-4 flex items-center gap-3 px-5 py-3.5 rounded-xl border bg-green-500/10 border-green-400/40 text-green-300">
+          <span className="text-xl">✅</span>
+          <p className="text-sm font-semibold">Consultation marked as Completed successfully.</p>
+        </div>
+      )}
+
+      {/* COMPLETE ERROR */}
+      {completeError && (
+        <div className="mb-4 px-5 py-3 rounded-xl border bg-red-500/10 border-red-400/40 text-red-300 text-sm">
+          {completeError}
+        </div>
+      )}
 
       {/* LAB RESULTS READY BANNER */}
       {hasLabResults && (
@@ -700,6 +804,7 @@ const ConsultationPage = () => {
               <p className="text-xs opacity-70 mt-0.5">
                 {labResults.length} result{labResults.length !== 1 ? "s" : ""} returned from the lab
                 {hasCriticalResult ? " — one or more are marked critical" : ""}
+                {labResultsViewed ? " · Reviewed ✓" : ""}
               </p>
             </div>
           </div>
@@ -730,7 +835,7 @@ const ConsultationPage = () => {
             <button
               type="button"
               onClick={() => setActiveForm(activeForm === "consultation" ? null : "consultation")}
-              disabled={hasConsultation}
+              disabled={hasConsultation || isCompleted}
               className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 transition border ${
                 hasConsultation
                   ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-500"
@@ -752,7 +857,7 @@ const ConsultationPage = () => {
             <button
               type="button"
               onClick={() => setActiveForm(activeForm === "lab" ? null : "lab")}
-              disabled={!hasConsultation}
+              disabled={!hasConsultation || isCompleted}
               className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 transition border ${
                 !hasConsultation
                   ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-500"
@@ -770,7 +875,7 @@ const ConsultationPage = () => {
               </div>
             </button>
 
-            {/* View Lab Results — shown when results exist */}
+            {/* View Lab Results */}
             {hasLabResults && (
               <button
                 type="button"
@@ -780,21 +885,31 @@ const ConsultationPage = () => {
                     ? activeForm === "labResults"
                       ? "bg-red-500/20 border-red-400 text-red-300"
                       : "border-red-400/40 text-red-400 hover:bg-red-400/10 animate-pulse"
+                    : labResultsViewed
+                    ? activeForm === "labResults"
+                      ? "bg-green-500/20 border-green-400 text-green-300"
+                      : "border-green-400/40 text-green-400 hover:bg-green-400/10"
                     : activeForm === "labResults"
                     ? "bg-cyan-500/20 border-cyan-400 text-cyan-300"
                     : "border-cyan-400/40 text-cyan-400 hover:bg-cyan-400/10"
                 }`}
               >
-                <span className="text-lg">{hasCriticalResult ? "⚠️" : "📊"}</span>
+                <span className="text-lg">{labResultsViewed ? "✅" : hasCriticalResult ? "⚠️" : "📊"}</span>
                 <div className="text-left">
                   <p>
                     {activeForm === "labResults" ? "Hide Lab Results" : "View Lab Results"}
-                    <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                      hasCriticalResult ? "bg-red-400 text-white" : "bg-cyan-400 text-black"
-                    }`}>{labResults.length}</span>
+                    {!labResultsViewed && (
+                      <span className={`ml-2 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                        hasCriticalResult ? "bg-red-400 text-white" : "bg-cyan-400 text-black"
+                      }`}>{labResults.length}</span>
+                    )}
                   </p>
                   <p className="text-xs font-normal text-gray-500 mt-0.5">
-                    {hasCriticalResult ? "Critical result — review immediately" : "Results ready from lab"}
+                    {labResultsViewed
+                      ? "Results reviewed ✓"
+                      : hasCriticalResult
+                      ? "Critical result — review immediately"
+                      : "Results ready from lab"}
                   </p>
                 </div>
               </button>
@@ -804,9 +919,9 @@ const ConsultationPage = () => {
             <button
               type="button"
               onClick={() => setActiveForm(activeForm === "prescription" ? null : "prescription")}
-              disabled={!hasConsultation}
+              disabled={!hasConsultation || isCompleted || (hasLabResults && !labResultsViewed)}
               className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 transition border ${
-                !hasConsultation
+                !hasConsultation || (hasLabResults && !labResultsViewed)
                   ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-500"
                   : activeForm === "prescription"
                   ? "bg-green-500/20 border-green-400 text-green-300"
@@ -817,10 +932,52 @@ const ConsultationPage = () => {
               <div className="text-left">
                 <p>Write Prescription</p>
                 <p className="text-xs font-normal text-gray-500 mt-0.5">
-                  {!hasConsultation ? "Add consultation first" : "Send medicines to pharmacy"}
+                  {!hasConsultation
+                    ? "Add consultation first"
+                    : hasLabResults && !labResultsViewed
+                    ? "View & acknowledge lab results first"
+                    : "Send medicines to pharmacy"}
                 </p>
               </div>
             </button>
+
+            {/* ── COMPLETE CONSULTATION — only after prescription is written ── */}
+            {hasConsultation && !isCompleted && (
+              <div className="mt-auto pt-3 border-t border-[#1e2d4a]">
+                {!hasPrescription ? (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-yellow-400/5 border border-yellow-400/20 text-yellow-500 text-xs">
+                    <span className="mt-0.5">⚠</span>
+                    <span>Please write a prescription before completing this consultation.</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCompleteConsultation}
+                    disabled={completing}
+                    className="w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-3 transition border bg-emerald-500/20 border-emerald-400/60 text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-50"
+                  >
+                    {completing ? (
+                      <span className="w-3.5 h-3.5 border-2 border-emerald-300/30 border-t-emerald-300 rounded-full animate-spin" />
+                    ) : (
+                      <span className="text-lg">🏁</span>
+                    )}
+                    <div className="text-left">
+                      <p>{completing ? "Completing…" : "Complete Consultation"}</p>
+                      <p className="text-xs font-normal text-emerald-400/70 mt-0.5">Mark this appointment as done</p>
+                    </div>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {isCompleted && (
+              <div className="mt-auto pt-3 border-t border-[#1e2d4a]">
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-green-400/5 border border-green-400/20 text-green-400 text-xs">
+                  <span>✅</span>
+                  <span>Consultation completed. No further actions needed.</span>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -851,7 +1008,10 @@ const ConsultationPage = () => {
         <div className="mb-4">
           <LabResultsPanel
             consultationId={consultationId}
+            labRequestId={labRequestId}
+            labResultsViewed={labResultsViewed}
             onClose={() => setActiveForm(null)}
+            onMarkedViewed={() => setLocalLabViewed(true)}
           />
         </div>
       )}
