@@ -49,6 +49,16 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    label: "Doctor Availability",
+    path: "/reception/doctor-availability",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+  },
 ];
 
 const ReceptionSidebar = ({ collapsed, onToggle }) => {
