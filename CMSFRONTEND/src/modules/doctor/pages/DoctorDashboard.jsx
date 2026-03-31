@@ -128,7 +128,9 @@ const DoctorDashboard = () => {
                     <td className="px-4 py-3">
                       <div>
                         <p className="text-white font-medium">
-                          {appt.patient_full_name || appt.patient_name || `Patient #${appt.patient}`}
+                          {appt.patient
+                            ? `${appt.patient.first_name} ${appt.patient.last_name}`.trim()
+                            : `Patient #${appt.patient_id}`}
                         </p>
                       </div>
                     </td>

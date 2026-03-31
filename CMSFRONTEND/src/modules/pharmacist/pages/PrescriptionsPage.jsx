@@ -6,7 +6,6 @@ import {
   getPrescriptionDetail,
   getBatches,
   createDispense,
-  createDispenseItem,
   createMedicineBill,
 } from "../api/pharmacistApi";
 
@@ -86,7 +85,7 @@ export const PrescriptionsPage = () => {
                       Dr. {rx.doctor_name || "—"}
                     </td>
                     <td className="px-4 py-3 text-gray-400">
-                      {rx.items?.map((item) => item.medicine_name || item.medicine).join(", ") || "—"}
+                      {rx.items?.map((item) => item.medicine_name).join(", ") || "—"}
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs bg-yellow-400/10 text-yellow-400 border border-yellow-400/30 px-2 py-1 rounded">
@@ -114,13 +113,14 @@ export const PrescriptionsPage = () => {
   );
 };
 
-// ─── DISPENSE PAGE ────────────────────────────────────────────────────────────
+// ─── DISPENSE PAGE (FIXED) ────────────────────────────────────────────────────
 export const DispensePage = () => {
   const { prescriptionCode } = useParams();
   const navigate = useNavigate();
   const [rx, setRx] = useState(null);
   const [batches, setBatches] = useState({});
   const [selectedBatch, setSelectedBatch] = useState({});
+  const [quantities, setQuantities] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -132,12 +132,21 @@ export const DispensePage = () => {
       .then(async (res) => {
         const data = res.data;
         setRx(data);
+        
+        // Initialize quantities from prescription
+        const initialQuantities = {};
+        data.items?.forEach((item) => {
+          const medId = item.medicine_id;
+          initialQuantities[medId] = 1; // Default quantity
+        });
+        setQuantities(initialQuantities);
+
         // Load batches for each medicine
         if (data.items) {
           const batchMap = {};
           await Promise.all(
             data.items.map(async (item) => {
-              const medId = item.medicine_id || item.medicine;
+              const medId = item.medicine_id;
               if (medId) {
                 const bRes = await getBatches(medId);
                 batchMap[medId] = bRes.results || bRes.data || bRes || [];
@@ -155,15 +164,21 @@ export const DispensePage = () => {
     setSelectedBatch((prev) => ({ ...prev, [medicineId]: batchId }));
   };
 
+  const handleQuantityChange = (medicineId, value) => {
+    const qty = parseInt(value) || 1;
+    setQuantities((prev) => ({ ...prev, [medicineId]: Math.max(1, qty) }));
+  };
+
   const calcTotal = () => {
     if (!rx?.items) return 0;
     return rx.items.reduce((sum, item) => {
-      const medId = item.medicine_id || item.medicine;
+      const medId = item.medicine_id;
       const bId = selectedBatch[medId];
       const batchList = batches[medId] || [];
       const batch = batchList.find((b) => b.batch_id === parseInt(bId));
-      const price = batch?.medicine_price || batch?.price || 0;
-      return sum + price * (item.quantity || 1);
+      const price = batch?.medicine_price || item.medicine_price || 0;
+      const qty = quantities[medId] || 1;
+      return sum + price * qty;
     }, 0);
   };
 
@@ -174,47 +189,50 @@ export const DispensePage = () => {
     setSuccess("");
 
     try {
-      const total = calcTotal();
-      const patientId = rx.patient_id || rx.patient;
-
-      // 1. Create Dispense
-      const dispenseRes = await createDispense({
-        prescription: rx.prescription_id || rx.id,
-        patient: patientId,
-        total_amount: total,
-        status: "Completed",
-      });
-
-      const dispenseId = dispenseRes.data?.dispense_id || dispenseRes.dispense_id;
-
-      // 2. Create Dispense Items
-      for (const item of rx.items) {
-        const medId = item.medicine_id || item.medicine;
-        const batchId = selectedBatch[medId];
-        if (!batchId) continue;
-        await createDispenseItem({
-          dispense: dispenseId,
-          batch: parseInt(batchId),
-          quantity: item.quantity || 1,
-        });
+      // Validate all medicines have batch selected
+      const missingBatches = rx.items.filter(
+        (item) => !selectedBatch[item.medicine_id]
+      );
+      
+      if (missingBatches.length > 0) {
+        setError("Please select batches for all medicines");
+        setSubmitting(false);
+        return;
       }
 
-      // 3. Create Medicine Bill
-      const finalAmt = Math.max(total - discount, 0);
+      // 1. Create Dispense with nested items (SINGLE API CALL - FIXED!)
+      const dispensePayload = {
+        prescription: rx.prescription_id || rx.id,
+        items: rx.items.map((item) => ({
+          batch: parseInt(selectedBatch[item.medicine_id]),
+          quantity: quantities[item.medicine_id] || 1,
+        })),
+      };
+
+      const dispenseRes = await createDispense(dispensePayload);
+      const dispenseData = dispenseRes.data || dispenseRes;
+      const dispenseId = dispenseData.dispense_id;
+      const totalAmount = dispenseData.total_amount;
+
+      // 2. Create Medicine Bill
+      const finalAmt = Math.max(totalAmount - discount, 0);
       await createMedicineBill({
         dispense: dispenseId,
-        total_amount: total,
+        total_amount: totalAmount,
         discount: discount,
-        final_amount: finalAmt,
         payment_status: "Pending",
       });
 
-      setSuccess("Dispensed successfully! Bill created.");
+      setSuccess("✓ Dispensed successfully! Bill created.");
       setTimeout(() => navigate("/pharmacist/prescriptions"), 2000);
     } catch (err) {
-      const msg = err?.response?.data
-        ? JSON.stringify(err.response.data)
-        : "Failed to dispense. Check batch selections.";
+      console.error("Dispense error:", err);
+      const msg =
+        err?.response?.data?.items?.[0] ||
+        err?.response?.data?.non_field_errors?.[0] ||
+        err?.response?.data?.detail ||
+        JSON.stringify(err?.response?.data) ||
+        "Failed to dispense. Please check batch selections and stock availability.";
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -230,6 +248,26 @@ export const DispensePage = () => {
       </PharmacistLayout>
     );
   }
+
+  if (!rx) {
+    return (
+      <PharmacistLayout title="Dispense Medicines">
+        <div className="text-center py-20">
+          <p className="text-red-400 mb-4">Prescription not found</p>
+          <button
+            onClick={() => navigate("/pharmacist/prescriptions")}
+            className="text-sm text-gray-400 hover:text-white"
+          >
+            ← Back to Prescriptions
+          </button>
+        </div>
+      </PharmacistLayout>
+    );
+  }
+
+  const allBatchesSelected = rx.items?.every(
+    (item) => selectedBatch[item.medicine_id]
+  );
 
   return (
     <PharmacistLayout title="Dispense Medicines">
@@ -251,67 +289,76 @@ export const DispensePage = () => {
         </div>
       )}
 
-      {rx && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Prescription Info */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Header card */}
-            <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white font-semibold">Prescription Details</h3>
-                <span className="font-mono text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded">
-                  {rx.prescription_code}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-gray-500 text-xs">Patient</p>
-                  <p className="text-white">{rx.patient_name || "—"}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-xs">Doctor</p>
-                  <p className="text-white">Dr. {rx.doctor_name || "—"}</p>
-                </div>
-                {rx.diagnosis && (
-                  <div className="col-span-2">
-                    <p className="text-gray-500 text-xs">Diagnosis</p>
-                    <p className="text-white">{rx.diagnosis}</p>
-                  </div>
-                )}
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Prescription Info */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Header card */}
+          <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold">Prescription Details</h3>
+              <span className="font-mono text-xs text-red-400 bg-red-400/10 px-2 py-1 rounded">
+                {rx.prescription_code}
+              </span>
             </div>
-
-            {/* Medicine Items */}
-            <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-[#1e2d4a]">
-                <h3 className="text-sm font-semibold text-white">Medicines to Dispense</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-gray-500 text-xs">Patient</p>
+                <p className="text-white">{rx.patient_name || "—"}</p>
               </div>
-              <div className="divide-y divide-[#1e2d4a]">
-                {rx.items?.map((item) => {
-                  const medId = item.medicine_id || item.medicine;
-                  const batchList = batches[medId] || [];
-                  const selectedB = batchList.find(
-                    (b) => b.batch_id === parseInt(selectedBatch[medId])
-                  );
+              <div>
+                <p className="text-gray-500 text-xs">Doctor</p>
+                <p className="text-white">Dr. {rx.doctor_name || "—"}</p>
+              </div>
+              {rx.diagnosis && (
+                <div className="col-span-2">
+                  <p className="text-gray-500 text-xs">Diagnosis</p>
+                  <p className="text-white">{rx.diagnosis}</p>
+                </div>
+              )}
+            </div>
+          </div>
 
-                  return (
-                    <div key={medId} className="p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <p className="text-white font-medium">
-                            {item.medicine_name || item.medicine_display || `Medicine #${medId}`}
+          {/* Medicine Items */}
+          <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#1e2d4a]">
+              <h3 className="text-sm font-semibold text-white">Medicines to Dispense</h3>
+            </div>
+            <div className="divide-y divide-[#1e2d4a]">
+              {rx.items?.map((item) => {
+                const medId = item.medicine_id;
+                const batchList = batches[medId] || [];
+                const selectedB = batchList.find(
+                  (b) => b.batch_id === parseInt(selectedBatch[medId])
+                );
+                const qty = quantities[medId] || 1;
+                const price = selectedB?.medicine_price || item.medicine_price || 0;
+
+                return (
+                  <div key={medId} className="p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <p className="text-white font-medium">
+                          {item.medicine_name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {item.dosage} | {item.frequency} | {item.duration} days
+                        </p>
+                        {item.instructions && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            Instructions: {item.instructions}
                           </p>
-                          <p className="text-xs text-gray-500">
-                            Qty: {item.quantity || 1} | {item.dosage || ""} {item.instructions || ""}
-                          </p>
-                        </div>
-                        {selectedB && (
-                          <span className="text-xs text-green-400">
-                            ₹{(parseFloat(selectedB.medicine_price || selectedB.price || 0) * (item.quantity || 1)).toFixed(2)}
-                          </span>
                         )}
                       </div>
-                      {batchList.length > 0 ? (
+                      {selectedB && (
+                        <span className="text-xs text-green-400 font-medium whitespace-nowrap ml-4">
+                          ₹{(price * qty).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Batch Selection */}
+                    {batchList.length > 0 ? (
+                      <div className="space-y-2">
                         <select
                           value={selectedBatch[medId] || ""}
                           onChange={(e) => handleBatchSelect(medId, e.target.value)}
@@ -320,65 +367,86 @@ export const DispensePage = () => {
                           <option value="">-- Select Batch --</option>
                           {batchList.map((b) => (
                             <option key={b.batch_id} value={b.batch_id}>
-                              {b.batch_number} | Qty: {b.quantity} | Exp: {b.expiry_date} | ₹{b.medicine_price || b.price}
+                              {b.batch_number} | Stock: {b.quantity} | Exp: {b.expiry_date} | ₹
+                              {b.medicine_price}
                             </option>
                           ))}
                         </select>
-                      ) : (
-                        <p className="text-xs text-red-400">No available batches for this medicine.</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
 
-          {/* Bill Summary */}
-          <div className="space-y-4">
-            <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-white mb-4">Bill Summary</h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Subtotal</span>
-                  <span className="text-white font-medium">₹{calcTotal().toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-400">Discount (₹)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={calcTotal()}
-                    value={discount}
-                    onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                    className="w-24 bg-[#060d1a] border border-[#1e2d4a] text-white text-xs rounded px-2 py-1 focus:border-red-400/50 outline-none text-right"
-                  />
-                </div>
-                <div className="border-t border-[#1e2d4a] pt-3 flex justify-between">
-                  <span className="text-white font-semibold">Total</span>
-                  <span className="text-red-400 font-bold text-lg">
-                    ₹{Math.max(calcTotal() - discount, 0).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                onClick={handleDispense}
-                disabled={submitting || !rx.items?.every((item) => {
-                  const medId = item.medicine_id || item.medicine;
-                  return selectedBatch[medId];
-                })}
-                className="mt-5 w-full bg-red-500 hover:bg-red-600 disabled:bg-red-900/40 disabled:text-red-700 text-white font-semibold py-3 rounded-xl transition text-sm"
-              >
-                {submitting ? "Processing..." : "Confirm Dispense & Create Bill"}
-              </button>
-              <p className="text-xs text-gray-500 mt-2 text-center">
-                Select batches for all medicines to proceed
-              </p>
+                        {/* Quantity Input */}
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-gray-400">Quantity:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max={selectedB?.quantity || 999}
+                            value={qty}
+                            onChange={(e) => handleQuantityChange(medId, e.target.value)}
+                            className="w-20 bg-[#060d1a] border border-[#1e2d4a] text-white text-xs rounded px-2 py-1 focus:border-red-400/50 outline-none"
+                          />
+                          {selectedB && (
+                            <span className="text-xs text-gray-500">
+                              (max: {selectedB.quantity})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-red-400">
+                        ⚠ No available batches for this medicine.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
-      )}
+
+        {/* Bill Summary */}
+        <div className="space-y-4">
+          <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-white mb-4">Bill Summary</h3>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Subtotal</span>
+                <span className="text-white font-medium">₹{calcTotal().toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Discount (₹)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={calcTotal()}
+                  value={discount}
+                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="w-24 bg-[#060d1a] border border-[#1e2d4a] text-white text-xs rounded px-2 py-1 focus:border-red-400/50 outline-none text-right"
+                />
+              </div>
+              <div className="border-t border-[#1e2d4a] pt-3 flex justify-between">
+                <span className="text-white font-semibold">Total</span>
+                <span className="text-red-400 font-bold text-lg">
+                  ₹{Math.max(calcTotal() - discount, 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleDispense}
+              disabled={submitting || !allBatchesSelected}
+              className="mt-5 w-full bg-red-500 hover:bg-red-600 disabled:bg-red-900/40 disabled:text-red-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition text-sm"
+            >
+              {submitting ? "Processing..." : "Confirm Dispense & Create Bill"}
+            </button>
+            
+            {!allBatchesSelected && (
+              <p className="text-xs text-yellow-400 mt-2 text-center">
+                ⚠ Select batches for all medicines to proceed
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
     </PharmacistLayout>
   );
 };

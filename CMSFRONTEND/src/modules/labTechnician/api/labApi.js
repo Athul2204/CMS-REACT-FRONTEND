@@ -21,6 +21,12 @@ export const deleteLabTest = async (id) => {
   return res.data;
 };
 
+// ─── INCOMING LAB REQUESTS (from Doctor) ─────────────────────────
+export const getLabRequests = async () => {
+  const res = await API.get("/api/labtechnician/lab-requests/");
+  return res.data; // { message, count, data: [...] }
+};
+
 // ─── LAB ORDERS ───────────────────────────────────────────────────
 export const getLabOrders = async () => {
   const res = await API.get("/api/labtechnician/lab-orders/");
