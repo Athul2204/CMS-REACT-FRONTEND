@@ -8,6 +8,7 @@ import {
   getDoctors,
   getDoctorAvailability,
 } from "../api/receptionApi";
+import API from "../../../api";
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 const fmt12 = (t) => {
@@ -23,6 +24,7 @@ const BookAppointmentModal = ({ onClose, onSaved }) => {
   const [doctors, setDoctors] = useState([]);
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [billingStatus, setBillingStatus] = useState(null); // null | "checking" | "paid" | "unpaid" | "no_bill" | "no_history"
 
   const [form, setForm] = useState({
     patient: "",
@@ -63,8 +65,37 @@ const BookAppointmentModal = ({ onClose, onSaved }) => {
   }, [form.doctor, form.appointment_date]);
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    setErrors({ ...errors, [e.target.name]: "" });
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+    setErrors({ ...errors, [name]: "" });
+
+    // When patient changes, check if their last appointment's bill is paid
+    if (name === "patient" && value) {
+      setBillingStatus("checking");
+      API.get(`/api/reception/appointments-by-date/?patient=${value}`)
+        .then((res) => {
+          const appts = res.data?.data || res.data || [];
+          // Get the most recent non-cancelled appointment
+          const sorted = appts
+            .filter((a) => a.status !== "Cancelled")
+            .sort((a, b) => b.appointment_id - a.appointment_id);
+          if (sorted.length === 0) {
+            setBillingStatus("no_history");
+          } else {
+            const latest = sorted[0];
+            if (!latest.bill) {
+              setBillingStatus("no_bill");
+            } else if (latest.bill.status === "Paid") {
+              setBillingStatus("paid");
+            } else {
+              setBillingStatus("unpaid");
+            }
+          }
+        })
+        .catch(() => setBillingStatus("no_history"));
+    } else if (name === "patient" && !value) {
+      setBillingStatus(null);
+    }
   };
 
   const selectSlot = (slot) => {
@@ -159,6 +190,37 @@ const BookAppointmentModal = ({ onClose, onSaved }) => {
               ))}
             </select>
             {errors.patient && <p className="text-red-400 text-xs mt-1">{errors.patient}</p>}
+
+            {/* Billing gate status */}
+            {billingStatus === "checking" && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                <span className="w-3 h-3 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
+                Checking billing status…
+              </div>
+            )}
+            {billingStatus === "unpaid" && (
+              <div className="mt-2 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-400/30 text-red-300 text-xs">
+                <span className="text-base leading-none mt-0.5">🚫</span>
+                <div>
+                  <p className="font-semibold">Billing Pending</p>
+                  <p className="mt-0.5 text-red-400/80">This patient's previous consultation bill is unpaid. Please collect payment in the Billing section before scheduling a new appointment.</p>
+                </div>
+              </div>
+            )}
+            {billingStatus === "no_bill" && (
+              <div className="mt-2 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-orange-500/10 border border-orange-400/30 text-orange-300 text-xs">
+                <span className="text-base leading-none mt-0.5">⚠️</span>
+                <div>
+                  <p className="font-semibold">Bill Not Generated</p>
+                  <p className="mt-0.5 text-orange-400/80">No bill found for this patient's last appointment. Ensure billing is completed before booking a new appointment.</p>
+                </div>
+              </div>
+            )}
+            {billingStatus === "paid" && (
+              <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-400/30 text-green-300 text-xs">
+                <span>✅</span> Previous bill cleared — appointment can be booked.
+              </div>
+            )}
           </div>
 
           {/* Doctor */}
@@ -307,7 +369,7 @@ const BookAppointmentModal = ({ onClose, onSaved }) => {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={loading || slotsLoading}
+            disabled={loading || slotsLoading || billingStatus === "unpaid" || billingStatus === "no_bill" || billingStatus === "checking"}
             className="px-5 py-2 text-sm font-semibold bg-blue-500 hover:bg-blue-400 text-white rounded-lg transition disabled:opacity-50 flex items-center gap-2"
           >
             {loading && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}

@@ -351,11 +351,11 @@ const PrescriptionForm = ({ consultationId, doctorId, onSaved, onClose }) => {
         consultation: consultationId,
         doctor: doctorId,
         items: items.map((it) => ({
-          medicine_name: parseInt(it.medicine_name),
+          medicine_name: Number(it.medicine_name),
           dosage: it.dosage,
           frequency: it.frequency,
-          duration: parseInt(it.duration),
-          instructions: it.instructions || "",
+          duration: Number(it.duration),
+          instructions: it.instructions,
         })),
       });
       onSaved();
@@ -370,79 +370,69 @@ const PrescriptionForm = ({ consultationId, doctorId, onSaved, onClose }) => {
     }
   };
 
-  const inputCls = "w-full bg-[#060d1a] border border-[#1e2d4a] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-400 transition";
-  const errCls = "w-full bg-[#060d1a] border border-red-500 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-400 transition";
+  const inputCls = (err) => `w-full bg-[#060d1a] border ${err ? "border-red-500" : "border-[#1e2d4a]"} rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-400 transition`;
 
   return (
     <Card>
-      <CardHeader title="Write Prescription" />
+      <CardHeader title="Write Prescription" subtitle="Add medicines and dosages" />
       <div className="p-5 space-y-4">
         {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
-        {medsLoading ? (
-          <div className="text-gray-500 text-sm">Loading medicines…</div>
-        ) : (
-          <>
-            <div className="grid grid-cols-5 gap-2 text-xs text-gray-500 px-1">
-              <span className="col-span-2">Medicine *</span>
-              <span>Dosage *</span>
-              <span>Frequency *</span>
-              <span>Duration (days) *</span>
-            </div>
-
-            {items.map((item, i) => {
-              const fe = fieldErrors[i] || {};
-              return (
-                <div key={i} className="space-y-1">
-                  <div className="flex gap-2 items-start">
-                    <div className="flex-[2]">
-                      <select
-                        value={item.medicine_name}
-                        onChange={(e) => updateItem(i, "medicine_name", e.target.value)}
-                        className={fe.medicine_name ? errCls : inputCls}
-                      >
-                        <option value="">Select medicine</option>
-                        {medicines.map((m) => (
-                          <option key={m.medicine_id} value={m.medicine_id}>{m.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <input value={item.dosage} onChange={(e) => updateItem(i, "dosage", e.target.value)}
-                      placeholder="e.g. 500mg" className={`flex-1 ${fe.dosage ? errCls : inputCls}`} />
-                    <input value={item.frequency} onChange={(e) => updateItem(i, "frequency", e.target.value)}
-                      placeholder="e.g. TDS" className={`flex-1 ${fe.frequency ? errCls : inputCls}`} />
-                    <input value={item.duration} onChange={(e) => updateItem(i, "duration", e.target.value)}
-                      placeholder="e.g. 5" type="number" min="1"
-                      className={`flex-1 ${fe.duration ? errCls : inputCls}`} />
-                    {items.length > 1 && (
-                      <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-300 text-lg mt-1 flex-shrink-0">✕</button>
-                    )}
-                  </div>
-                  {Object.values(fe).some(Boolean) && (
-                    <div className="flex gap-2 text-xs text-red-400 px-1">
-                      <span className="flex-[2]">{fe.medicine_name}</span>
-                      <span className="flex-1">{fe.dosage}</span>
-                      <span className="flex-1">{fe.frequency}</span>
-                      <span className="flex-1">{fe.duration}</span>
-                      {items.length > 1 && <span className="w-6" />}
-                    </div>
-                  )}
-                  <input value={item.instructions} onChange={(e) => updateItem(i, "instructions", e.target.value)}
-                    placeholder="Instructions (optional)" className={inputCls} />
+        {items.map((item, i) => {
+          const errs = fieldErrors[i] || {};
+          return (
+            <div key={i} className="border border-[#1e2d4a] rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray-400 font-medium">Medicine #{i + 1}</p>
+                {items.length > 1 && (
+                  <button type="button" onClick={() => removeItem(i)} className="text-xs text-red-400 hover:text-red-300">
+                    Remove
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Medicine *</label>
+                  <select value={item.medicine_name} onChange={(e) => updateItem(i, "medicine_name", e.target.value)} className={inputCls(errs.medicine_name)}>
+                    <option value="">-- Select --</option>
+                    {medicines.map((m) => <option key={m.medicine_id} value={m.medicine_id}>{m.medicine_name}</option>)}
+                  </select>
+                  {errs.medicine_name && <p className="text-red-400 text-xs mt-1">{errs.medicine_name}</p>}
                 </div>
-              );
-            })}
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Dosage *</label>
+                  <input type="text" value={item.dosage} onChange={(e) => updateItem(i, "dosage", e.target.value)} placeholder="e.g., 500mg" className={inputCls(errs.dosage)} />
+                  {errs.dosage && <p className="text-red-400 text-xs mt-1">{errs.dosage}</p>}
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Frequency *</label>
+                  <input type="text" value={item.frequency} onChange={(e) => updateItem(i, "frequency", e.target.value)} placeholder="e.g., Twice daily" className={inputCls(errs.frequency)} />
+                  {errs.frequency && <p className="text-red-400 text-xs mt-1">{errs.frequency}</p>}
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">Duration (days) *</label>
+                  <input type="number" value={item.duration} onChange={(e) => updateItem(i, "duration", e.target.value)} placeholder="7" className={inputCls(errs.duration)} />
+                  {errs.duration && <p className="text-red-400 text-xs mt-1">{errs.duration}</p>}
+                </div>
+                <div className="col-span-full">
+                  <label className="text-xs text-gray-400 mb-1 block">Instructions</label>
+                  <textarea rows={2} value={item.instructions} onChange={(e) => updateItem(i, "instructions", e.target.value)} placeholder="After meals, with water…" className={inputCls()} />
+                </div>
+              </div>
+            </div>
+          );
+        })}
 
-            <button type="button" onClick={addItem} className="text-xs text-green-400 hover:underline">+ Add medicine</button>
-          </>
-        )}
+        <button type="button" onClick={addItem} className="w-full py-2 text-sm text-green-400 border border-green-400/40 rounded-lg hover:bg-green-400/10 transition">
+          + Add Another Medicine
+        </button>
 
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-gray-400 hover:text-white border border-[#1e2d4a] rounded-lg transition">Cancel</button>
           <button type="button" onClick={handleSubmit} disabled={loading || medsLoading}
             className="px-5 py-2 text-sm font-semibold bg-green-500 hover:bg-green-400 text-white rounded-lg transition disabled:opacity-50 flex items-center gap-2">
             {loading && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {loading ? "Creating…" : "Create Prescription"}
+            {loading ? "Sending…" : "Send to Pharmacy"}
           </button>
         </div>
       </div>
@@ -450,19 +440,18 @@ const PrescriptionForm = ({ consultationId, doctorId, onSaved, onClose }) => {
   );
 };
 
-// ─── LAB RESULTS PANEL (with Mark as Viewed) ─────────────────────
-const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed: initialViewed, onClose, onMarkedViewed }) => {
+// ─── LAB RESULTS PANEL ────────────────────────────────────────────
+const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed, onClose, onMarkedViewed }) => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [marking, setMarking] = useState(false);
-  const [viewed, setViewed] = useState(initialViewed);
-  const [markError, setMarkError] = useState("");
+  const [viewed, setViewed] = useState(labResultsViewed);
 
   useEffect(() => {
     if (!consultationId) return;
     getLabResults(consultationId)
-      .then((res) => setResults(res.results || res.data || []))
+      .then((data) => setResults(data.results || []))
       .catch(() => setError("Failed to load lab results."))
       .finally(() => setLoading(false));
   }, [consultationId]);
@@ -470,13 +459,12 @@ const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed: initi
   const handleMarkViewed = async () => {
     if (!labRequestId) return;
     setMarking(true);
-    setMarkError("");
     try {
       await markLabResultsViewed(labRequestId);
       setViewed(true);
-      if (onMarkedViewed) onMarkedViewed();
+      onMarkedViewed();
     } catch (err) {
-      setMarkError(err?.response?.data?.message || "Failed to mark as viewed.");
+      setError("Failed to mark results as viewed.");
     } finally {
       setMarking(false);
     }
@@ -486,57 +474,52 @@ const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed: initi
     <Card>
       <div className="px-5 py-4 border-b border-[#1e2d4a] flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-white">🔬 Lab Results</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Results returned from lab technician</p>
+          <h3 className="text-sm font-semibold text-white">Lab Results</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {results.length} result{results.length !== 1 ? "s" : ""} returned from lab
+          </p>
         </div>
-        <button type="button" onClick={onClose} className="text-gray-500 hover:text-white text-lg transition">✕</button>
+        <button type="button" onClick={onClose} className="text-gray-500 hover:text-white text-sm">✕</button>
       </div>
-      <div className="p-5">
-        {loading && (
-          <div className="space-y-3">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-14 bg-[#1e2d4a] rounded-lg animate-pulse" />
-            ))}
+      <div className="p-5 space-y-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
           </div>
-        )}
-        {error && <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{error}</div>}
-        {!loading && !error && results.length === 0 && (
-          <div className="text-center py-10">
-            <p className="text-4xl mb-3">⏳</p>
-            <p className="text-gray-500 text-sm">Lab results not yet available.</p>
-            <p className="text-gray-600 text-xs mt-1">The lab technician is still processing the tests.</p>
-          </div>
-        )}
-        {!loading && results.length > 0 && (
-          <div className="space-y-3">
-            {results.map((r, i) => (
-              <div key={i} className={`bg-[#060d1a] rounded-xl p-4 border ${r.is_critical ? "border-red-400/40" : "border-[#1e2d4a]"}`}>
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {r.test_name || `Test #${r.result_id}`}
-                      {r.is_critical && (
-                        <span className="ml-2 text-xs bg-red-400/10 text-red-400 border border-red-400/30 px-2 py-0.5 rounded">⚠ Critical</span>
-                      )}
-                    </p>
-                    <p className="text-lg font-bold text-cyan-400 mt-1">{r.result_value}</p>
-                    {r.remarks && <p className="text-xs text-gray-400 mt-1 italic">{r.remarks}</p>}
+        ) : error ? (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{error}</div>
+        ) : results.length === 0 ? (
+          <p className="text-gray-500 text-sm text-center py-8">No results available yet.</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {results.map((result, i) => (
+                <div key={i} className={`border rounded-lg p-4 ${result.is_critical ? "border-red-400/40 bg-red-500/5" : "border-[#1e2d4a] bg-[#060d1a]"}`}>
+                  <div className="flex items-start justify-between mb-2">
+                    <p className="text-sm font-semibold text-purple-300">🧪 {result.test_name}</p>
+                    {result.is_critical && (
+                      <span className="text-xs bg-red-400/20 text-red-400 border border-red-400/40 px-2 py-0.5 rounded-full font-medium">
+                        ⚠ Critical
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-600">
-                    {r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}
+                  <p className="text-lg font-bold text-cyan-400 mb-1">{result.result_value}</p>
+                  {result.remarks && (
+                    <p className="text-xs text-gray-400 mb-1">
+                      <span className="text-gray-500">Remarks:</span> {result.remarks}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    {result.created_at ? new Date(result.created_at).toLocaleDateString("en-IN") : ""}
                   </p>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
 
-            {/* ── MARK AS VIEWED ── */}
             <div className="pt-3 border-t border-[#1e2d4a]">
-              {markError && (
-                <div className="mb-3 bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-2 rounded-lg">{markError}</div>
-              )}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2">
                 {viewed ? (
-                  <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-400/5 border border-green-400/20 text-green-400 text-xs">
                     <span className="text-lg">✅</span>
                     <span>Results marked as reviewed</span>
                   </div>
@@ -558,7 +541,7 @@ const LabResultsPanel = ({ consultationId, labRequestId, labResultsViewed: initi
                 </p>
               </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </Card>
@@ -742,6 +725,11 @@ const ConsultationPage = () => {
   const labResultsViewed = localLabViewed || data.lab_results_viewed || false;
   const isCompleted = data.appointment?.status === "Completed";
 
+  // ✅ NEW: Check if any lab request exists for this consultation
+  const labRequests = data.lab_requests || [];
+  const hasLabRequest = labRequests.length > 0;
+  const hasAnyPendingLabRequest = labRequests.some(req => req.status === "Pending");
+
   // Detect if a prescription has been written for this consultation.
   // The backend exposes previous_prescriptions scoped to the patient;
   // we also check a potential flag from the consultation itself.
@@ -857,9 +845,9 @@ const ConsultationPage = () => {
             <button
               type="button"
               onClick={() => setActiveForm(activeForm === "lab" ? null : "lab")}
-              disabled={!hasConsultation || isCompleted}
+              disabled={!hasConsultation || isCompleted || hasLabRequest}
               className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 transition border ${
-                !hasConsultation
+                !hasConsultation || hasLabRequest
                   ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-500"
                   : activeForm === "lab"
                   ? "bg-purple-500/20 border-purple-400 text-purple-300"
@@ -868,9 +856,13 @@ const ConsultationPage = () => {
             >
               <span className="text-lg">🔬</span>
               <div className="text-left">
-                <p>Request Lab Tests</p>
+                <p>{hasLabRequest ? "Lab Request Sent ✓" : "Request Lab Tests"}</p>
                 <p className="text-xs font-normal text-gray-500 mt-0.5">
-                  {!hasConsultation ? "Add consultation first" : "Send to lab technician"}
+                  {!hasConsultation 
+                    ? "Add consultation first" 
+                    : hasLabRequest 
+                    ? "Request already submitted" 
+                    : "Send to lab technician"}
                 </p>
               </div>
             </button>
@@ -919,9 +911,9 @@ const ConsultationPage = () => {
             <button
               type="button"
               onClick={() => setActiveForm(activeForm === "prescription" ? null : "prescription")}
-              disabled={!hasConsultation || isCompleted || (hasLabResults && !labResultsViewed)}
+              disabled={!hasConsultation || isCompleted || (hasLabResults && !labResultsViewed) || hasAnyPendingLabRequest}
               className={`w-full px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-3 transition border ${
-                !hasConsultation || (hasLabResults && !labResultsViewed)
+                !hasConsultation || (hasLabResults && !labResultsViewed) || hasAnyPendingLabRequest
                   ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-500"
                   : activeForm === "prescription"
                   ? "bg-green-500/20 border-green-400 text-green-300"
@@ -934,6 +926,8 @@ const ConsultationPage = () => {
                 <p className="text-xs font-normal text-gray-500 mt-0.5">
                   {!hasConsultation
                     ? "Add consultation first"
+                    : hasAnyPendingLabRequest
+                    ? "Wait for lab results first"
                     : hasLabResults && !labResultsViewed
                     ? "View & acknowledge lab results first"
                     : "Send medicines to pharmacy"}

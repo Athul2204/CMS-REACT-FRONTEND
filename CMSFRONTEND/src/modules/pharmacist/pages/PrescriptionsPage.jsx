@@ -8,6 +8,7 @@ import {
   createDispense,
   createMedicineBill,
 } from "../api/pharmacistApi";
+import API from "../../../api";
 
 // ─── PRESCRIPTIONS LIST ───────────────────────────────────────────────────────
 export const PrescriptionsPage = () => {
@@ -126,12 +127,39 @@ export const DispensePage = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [discount, setDiscount] = useState(0);
+  const [billingBlocked, setBillingBlocked] = useState(false);
+  const [billingMessage, setBillingMessage] = useState("");
 
   useEffect(() => {
     getPrescriptionDetail(prescriptionCode)
       .then(async (res) => {
         const data = res.data;
         setRx(data);
+        
+        // ─── BILLING GATE ──────────────────────────────────────
+        // Check if the appointment's consultation bill is paid
+        if (data.appointment_id || data.appointment) {
+          const apptId = data.appointment_id || data.appointment;
+          try {
+            const billRes = await API.get(`/api/reception/appointments-by-date/?appointment_id=${apptId}`);
+            const appts = billRes.data?.data || billRes.data || [];
+            const appt = Array.isArray(appts)
+              ? appts.find((a) => a.appointment_id === apptId)
+              : null;
+            const bill = appt?.bill;
+            if (!bill || bill.status !== "Paid") {
+              setBillingBlocked(true);
+              setBillingMessage(
+                !bill
+                  ? "No consultation bill found for this patient. Please ensure billing is done by the receptionist before dispensing."
+                  : "The consultation bill for this patient is not yet paid. Medicines can only be dispensed after the bill is cleared."
+              );
+            }
+          } catch {
+            // If billing check fails, don't block (fail open)
+          }
+        }
+        // ──────────────────────────────────────────────────────
         
         // Initialize quantities from prescription
         const initialQuantities = {};
@@ -289,6 +317,18 @@ export const DispensePage = () => {
         </div>
       )}
 
+      {/* ─── BILLING GATE BANNER ─── */}
+      {billingBlocked && (
+        <div className="mb-5 flex items-start gap-3 px-5 py-4 rounded-xl border bg-red-500/10 border-red-400/40 text-red-300">
+          <span className="text-2xl leading-none mt-0.5">🚫</span>
+          <div>
+            <p className="text-sm font-semibold mb-1">Dispense Blocked — Billing Pending</p>
+            <p className="text-xs text-red-400/80">{billingMessage}</p>
+            <p className="text-xs text-red-400/60 mt-1">Please contact the receptionist to complete billing first.</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Prescription Info */}
         <div className="lg:col-span-2 space-y-4">
@@ -433,13 +473,18 @@ export const DispensePage = () => {
 
             <button
               onClick={handleDispense}
-              disabled={submitting || !allBatchesSelected}
+              disabled={submitting || !allBatchesSelected || billingBlocked}
               className="mt-5 w-full bg-red-500 hover:bg-red-600 disabled:bg-red-900/40 disabled:text-red-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition text-sm"
             >
               {submitting ? "Processing..." : "Confirm Dispense & Create Bill"}
             </button>
             
-            {!allBatchesSelected && (
+            {billingBlocked && (
+              <p className="text-xs text-red-400 mt-2 text-center">
+                🚫 Billing must be paid before dispensing
+              </p>
+            )}
+            {!billingBlocked && !allBatchesSelected && (
               <p className="text-xs text-yellow-400 mt-2 text-center">
                 ⚠ Select batches for all medicines to proceed
               </p>

@@ -8,6 +8,7 @@ import {
   getLabOrders,
   getLabRequests,
 } from "../api/labApi";
+import API from "../../../api";
 
 const buildPatientMap = (reqs) => {
   const map = {};
@@ -89,12 +90,16 @@ const ResultForm = ({ item, existingResult, onSaved, onCancel }) => {
   );
 };
 
-const OrderCard = ({ order, resultMap, onRefresh }) => {
+const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
   const [openItemId, setOpenItemId] = useState(null);
   const items = order.items || [];
   const total = items.length;
   const done = items.filter((it) => resultMap[it.order_item_id]).length;
   const allDone = total > 0 && done === total;
+
+  // Billing gate: only allow result entry if the lab order has a paid bill
+  const isBillingPaid = billedOrderIds?.has(order.order_id);
+  const billingBlocked = !isBillingPaid;
 
   const handleDelete = async (resultId) => {
     if (!window.confirm("Delete this result?")) return;
@@ -125,7 +130,7 @@ const OrderCard = ({ order, resultMap, onRefresh }) => {
   }
 
   return (
-    <div className={`bg-[#0d1629] border rounded-xl overflow-hidden ${allDone ? "border-green-400/30" : "border-[#1e2d4a]"}`}>
+    <div className={`bg-[#0d1629] border rounded-xl overflow-hidden ${allDone ? "border-green-400/30" : billingBlocked ? "border-orange-400/30" : "border-[#1e2d4a]"}`}>
       <div className="px-5 py-4 border-b border-[#1e2d4a] flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="font-mono text-xs text-cyan-400 bg-cyan-400/10 px-2 py-1 rounded">{order.order_number}</span>
@@ -139,8 +144,27 @@ const OrderCard = ({ order, resultMap, onRefresh }) => {
           <span className={`text-xs px-2 py-1 rounded border ${allDone ? "bg-green-400/10 text-green-400 border-green-400/30" : "bg-yellow-400/10 text-yellow-400 border-yellow-400/30"}`}>
             {allDone ? "✓ Completed" : "Pending"}
           </span>
+          {billingBlocked && (
+            <span className="text-xs px-2 py-1 rounded border bg-orange-400/10 text-orange-400 border-orange-400/30">
+              💳 Bill Pending
+            </span>
+          )}
         </div>
       </div>
+
+      {/* ─── BILLING GATE BANNER ─── */}
+      {billingBlocked && (
+        <div className="mx-4 mt-4 flex items-start gap-3 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-400/30 text-orange-300">
+          <span className="text-xl leading-none mt-0.5">🚫</span>
+          <div>
+            <p className="text-xs font-semibold">Results Blocked — Billing Not Paid</p>
+            <p className="text-xs text-orange-400/80 mt-0.5">
+              Lab results can only be entered after the patient's consultation bill has been paid. Please ask the receptionist to complete billing first.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="h-1 bg-[#1e2d4a]">
         <div className="h-1 bg-cyan-400 transition-all duration-500" style={{ width: `${(done / total) * 100}%` }} />
       </div>
@@ -166,22 +190,33 @@ const OrderCard = ({ order, resultMap, onRefresh }) => {
                 <div className="flex gap-2 flex-shrink-0">
                   {result ? (
                     <>
-                      <button onClick={() => setOpenItemId(isOpen ? null : item.order_item_id)}
-                        className="text-xs text-cyan-400 hover:text-cyan-300 border border-cyan-400/30 px-3 py-1.5 rounded-lg transition">
+                      <button
+                        onClick={() => !billingBlocked && setOpenItemId(isOpen ? null : item.order_item_id)}
+                        disabled={billingBlocked}
+                        className={`text-xs border px-3 py-1.5 rounded-lg transition ${billingBlocked ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-600" : "text-cyan-400 hover:text-cyan-300 border-cyan-400/30"}`}
+                      >
                         {isOpen ? "Cancel" : "Edit"}
                       </button>
-                      <button onClick={() => handleDelete(result.result_id)}
-                        className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 px-3 py-1.5 rounded-lg transition">Del</button>
+                      <button
+                        onClick={() => !billingBlocked && handleDelete(result.result_id)}
+                        disabled={billingBlocked}
+                        className={`text-xs border px-3 py-1.5 rounded-lg transition ${billingBlocked ? "opacity-40 cursor-not-allowed border-[#1e2d4a] text-gray-600" : "text-red-400 hover:text-red-300 border-red-400/30"}`}
+                      >
+                        Del
+                      </button>
                     </>
                   ) : (
-                    <button onClick={() => setOpenItemId(isOpen ? null : item.order_item_id)}
-                      className="text-xs font-bold text-black bg-cyan-400 hover:bg-cyan-300 px-4 py-1.5 rounded-lg transition">
-                      {isOpen ? "Cancel" : "+ Enter Result"}
+                    <button
+                      onClick={() => !billingBlocked && setOpenItemId(isOpen ? null : item.order_item_id)}
+                      disabled={billingBlocked}
+                      className={`text-xs font-bold px-4 py-1.5 rounded-lg transition ${billingBlocked ? "opacity-40 cursor-not-allowed bg-gray-700 text-gray-500" : "text-black bg-cyan-400 hover:bg-cyan-300"}`}
+                    >
+                      {billingBlocked ? "🔒 Billing Pending" : isOpen ? "Cancel" : "+ Enter Result"}
                     </button>
                   )}
                 </div>
               </div>
-              {isOpen && (
+              {isOpen && !billingBlocked && (
                 <ResultForm item={item} existingResult={result || null}
                   onSaved={() => { setOpenItemId(null); onRefresh(); }}
                   onCancel={() => setOpenItemId(null)} />
@@ -197,6 +232,7 @@ const OrderCard = ({ order, resultMap, onRefresh }) => {
 const LabResultsPage = () => {
   const [orders, setOrders] = useState([]);
   const [results, setResults] = useState([]);
+  const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("Pending");
@@ -204,8 +240,9 @@ const LabResultsPage = () => {
   const fetchAll = () => {
     setLoading(true);
     setError("");
-    Promise.all([getLabOrders(), getLabResults(), getLabRequests()])
-      .then(([oRes, rRes, reqRes]) => {
+    Promise.all([getLabOrders(), getLabResults(), getLabRequests(),
+      import("../api/labApi").then(m => m.getLabBills())])
+      .then(([oRes, rRes, reqRes, bRes]) => {
         const rawOrders = oRes.data || [];
         const reqs = reqRes.data || [];
         const patientMap = buildPatientMap(reqs);
@@ -215,6 +252,7 @@ const LabResultsPage = () => {
         }));
         setOrders(enriched);
         setResults(rRes.data || []);
+        setBills(bRes.data || []);
       })
       .catch(() => setError("Failed to load data."))
       .finally(() => setLoading(false));
@@ -224,6 +262,13 @@ const LabResultsPage = () => {
 
   const resultMap = {};
   results.forEach((r) => { resultMap[r.lab_order_item] = r; });
+
+  // Orders with a PAID lab bill
+  const billedOrderIds = new Set(
+    bills
+      .filter((b) => b.payment_status === "Paid" || b.payment_status === "paid")
+      .map((b) => b.lab_order)
+  );
 
   const pendingCount = orders.filter((o) => o.status === "Pending").length;
   const filteredOrders = filter === "All" ? orders : orders.filter((o) => o.status === filter);
@@ -245,6 +290,12 @@ const LabResultsPage = () => {
         <p className="text-xs text-gray-500">{filteredOrders.length} order{filteredOrders.length !== 1 ? "s" : ""} · {results.length} result{results.length !== 1 ? "s" : ""} entered</p>
       </div>
 
+      {/* Billing gate notice */}
+      <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-500/5 border border-blue-400/20 text-blue-300/70 text-xs">
+        <span>💡</span>
+        <span>Results can only be entered after the patient's <strong className="text-blue-300">consultation bill is paid</strong> by the receptionist.</span>
+      </div>
+
       {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{error}</div>}
 
       {loading ? (
@@ -264,7 +315,7 @@ const LabResultsPage = () => {
       ) : (
         <div className="space-y-4">
           {filteredOrders.map((order) => (
-            <OrderCard key={order.order_id} order={order} resultMap={resultMap} onRefresh={fetchAll} />
+            <OrderCard key={order.order_id} order={order} resultMap={resultMap} onRefresh={fetchAll} billedOrderIds={billedOrderIds} />
           ))}
         </div>
       )}
