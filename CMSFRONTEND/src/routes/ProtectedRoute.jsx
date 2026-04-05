@@ -1,25 +1,40 @@
+// src/routes/ProtectedRoute.jsx
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const ProtectedRoute = ({ children, allowedRole }) => {
-  const { token, user } = useAuth();
+  const { user, loading } = useAuth();
 
-  // ❌ Not logged in (both missing)
-  if (!token && !user) {
-    return <Navigate to="/login" replace />;
+  // Wait for /api/auth/me/ to resolve before making any redirect decision.
+  // Without this, every page refresh kicks authenticated users to /login.
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          fontSize: "14px",
+          color: "#6b7280",
+        }}
+      >
+        Loading...
+      </div>
+    );
   }
 
-  // ⏳ User loading (prevent flicker)
+  // Not authenticated at all
   if (!user) {
-    return null; // or spinner
-  }
-
-  // ❌ Role mismatch
-  if (allowedRole && user.role !== allowedRole) {
     return <Navigate to="/login" replace />;
   }
 
-  // ✅ Allowed
+  // Authenticated but wrong role.
+  // Redirect to /unauthorized — NOT /login — so user knows why they can't enter.
+  if (allowedRole && user.role !== allowedRole) {
+    return <Navigate to="/unauthorized" replace />;
+  }
+
   return children;
 };
 

@@ -1,83 +1,53 @@
-import { Routes, Route } from "react-router-dom";
-import Home from "../pages/LandingPage";
-import Login from "../pages/Login";
+// src/routes/AppRoutes.jsx
+import { Routes, Route, Navigate } from "react-router-dom";
+import LandingPage    from "../pages/LandingPage";
+import Login          from "../pages/Login";
+import Unauthorized   from "../pages/Unauthorized";
 import ProtectedRoute from "./ProtectedRoute";
 
-import doctorRoutes from "../modules/doctor/routes";
-import LandingPage from "../pages/LandingPage";
-import receptionistRoutes from "../modules/receptionist/routes";
+import adminRoutes      from "../modules/admin/routes";
+import doctorRoutes     from "../modules/doctor/routes";
+import receptionRoutes  from "../modules/receptionist/routes";
 import pharmacistRoutes from "../modules/pharmacist/routes";
-import adminRoutes from "../modules/admin/routes";
-import labRoutes from "../modules/labTechnician/routes";
+import labRoutes        from "../modules/labTechnician/routes";
+
+// Role strings must exactly match what Django's CustomTokenObtainPairSerializer
+// returns — all lowercase, no spaces:
+//   admin | doctor | receptionist | pharmacist | labtechnician
+
+const MODULE_ROUTES = [
+  { role: "admin",         routes: adminRoutes },
+  { role: "doctor",        routes: doctorRoutes },
+  { role: "receptionist",  routes: receptionRoutes },
+  { role: "pharmacist",    routes: pharmacistRoutes },
+  { role: "labtechnician", routes: labRoutes },
+];
+
 function AppRoutes() {
   return (
     <Routes>
-
       {/* Public */}
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<Login />} />
+      <Route path="/"             element={<LandingPage />} />
+      <Route path="/login"        element={<Login />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
 
-      {/* 🔥 Doctor Module Routes */}
-      {doctorRoutes.map((route, index) => (
-        <Route
-          key={index}
-          path={route.path}
-          element={
-            <ProtectedRoute allowedRole="doctor">
-              {route.element}
-            </ProtectedRoute>
-          }
-        />
-      ))}
-      {receptionistRoutes.map((route, index) => (
-        <Route
-          key={index}
-          path={route.path}
-          element={
-            <ProtectedRoute allowedRole="receptionist">
-              {route.element}
-            </ProtectedRoute>
-          }
-        />
-      ))}
+      {/* Role-isolated module routes */}
+      {MODULE_ROUTES.flatMap(({ role, routes }) =>
+        routes.map((route, i) => (
+          <Route
+            key={`${role}-${i}`}
+            path={route.path}
+            element={
+              <ProtectedRoute allowedRole={role}>
+                {route.element}
+              </ProtectedRoute>
+            }
+          />
+        ))
+      )}
 
-      {pharmacistRoutes.map((route, index) => (
-        <Route
-          key={index}
-          path={route.path}
-          element={
-            <ProtectedRoute allowedRole="pharmacist">
-              {route.element}
-            </ProtectedRoute>
-          }
-        />
-      ))}
-
-      {adminRoutes.map((route, index) => (
-        <Route
-          key={index}
-          path={route.path}
-          element={
-            <ProtectedRoute allowedRole="admin">
-              {route.element}
-            </ProtectedRoute>
-          }
-        />
-      ))}
-
-      {labRoutes.map((route, index) => (
-        <Route
-          key={index}
-          path={route.path}
-          element={
-            <ProtectedRoute allowedRole="labtechnician">
-              {route.element}
-            </ProtectedRoute>
-          }
-        />
-      ))}
-
-      
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

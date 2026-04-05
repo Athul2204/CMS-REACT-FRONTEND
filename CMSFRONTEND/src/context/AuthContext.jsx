@@ -1,162 +1,77 @@
-// import React, { createContext, useContext, useState } from "react";
-// import { loginUser } from "../api/authApi";
-// import { useNavigate } from "react-router-dom";
-
-// const AuthContext = createContext();
-
-// export const AuthProvider = ({ children }) => {
-//   const navigate = useNavigate();
-
-//   // ✅ Restore token from sessionStorage
-//   const [token, setToken] = useState(() => {
-//     return sessionStorage.getItem("access");
-//   });
-
-//   // ✅ Restore user from sessionStorage
-//   const [user, setUser] = useState(() => {
-//     const storedUser = sessionStorage.getItem("user");
-//     return storedUser ? JSON.parse(storedUser) : null;
-//   });
-
-//   // 🔥 LOGIN FUNCTION
-//   const login = async (credentials) => {
-//     try {
-//       const data = await loginUser(credentials);
-
-//       const { access, refresh, user } = data;
-//       const role = user.role;
-
-//       console.log("LOGIN DATA:", data);
-//       console.log("ROLE:", role);
-
-//       // ✅ store in sessionStorage
-//       sessionStorage.setItem("access", access);
-//       sessionStorage.setItem("refresh", refresh);
-//       sessionStorage.setItem("user", JSON.stringify(user));
-
-//       setToken(access);
-//       setUser(user);
-
-//       // 🔥 role-based redirect
-//       const roleRoutes = {
-//         doctor: "/doctor/dashboard",
-//         admin: "/admin/dashboard",
-//         receptionist: "/reception/dashboard",
-//         pharmacist: "/pharmacist/dashboard",
-//         labtechnician: "/labtechnician/dashboard",
-//       };
-
-//       if (!roleRoutes[role]) {
-//         console.error("Invalid role:", role);
-//         return;
-//       }
-
-//       navigate(roleRoutes[role]);
-
-//     } catch (error) {
-//       console.error("LOGIN ERROR:", error);
-//       alert(error || "Invalid credentials");
-//     }
-//   };
-
-//   // 🔥 LOGOUT
-//   const logout = () => {
-//     sessionStorage.clear(); // ✅ clear everything
-
-//     setToken(null);
-//     setUser(null);
-
-//     navigate("/login");
-//   };
-
-//   return (
-//     <AuthContext.Provider value={{ user, token, login, logout }}>
-//       {children}
-//     </AuthContext.Provider>
-//   );
-// };
-
-// // custom hook
-// export const useAuth = () => useContext(AuthContext);
-
-
-import React, { createContext, useContext, useState } from "react";
+// src/context/AuthContext.jsx
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { loginUser } from "../api/authApi";
 import { useNavigate } from "react-router-dom";
+import API from "../api/index";
 
 const AuthContext = createContext();
+
+const ROLE_DASHBOARDS = {
+  admin:         "/admin/dashboard",
+  doctor:        "/doctor/dashboard",
+  receptionist:  "/reception/dashboard",
+  pharmacist:    "/pharmacist/dashboard",
+  labtechnician: "/labtechnician/dashboard",
+};
 
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
 
-  // ✅ Restore token from sessionStorage
-  const [token, setToken] = useState(() => {
-    return sessionStorage.getItem("access");
-  });
+  // User profile lives ONLY in React memory — never sessionStorage/localStorage
+  const [user, setUser] = useState(null);
 
-  // ✅ Restore user from sessionStorage
-  const [user, setUser] = useState(() => {
-    const storedUser = sessionStorage.getItem("user");
-    return storedUser ? JSON.parse(storedUser) : null;
-  });
+  // true while the /me/ call is in-flight on mount.
+  // ProtectedRoute waits on this before deciding to redirect.
+  const [loading, setLoading] = useState(true);
 
-  // 🔥 LOGIN FUNCTION
+  // On mount: restore session from HttpOnly cookie via GET /api/auth/me/
+  // If the cookie is gone/expired -> user stays null -> ProtectedRoute -> /login
+  useEffect(() => {
+    API.get("/api/auth/me/")
+      .then((res) => setUser(res.data))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // LOGIN
+  // Django sets tokens as HttpOnly cookies in the response.
+  // We only store the user profile object in React state.
   const login = async (credentials) => {
     try {
-      const data = await loginUser(credentials);
+      const data = await loginUser(credentials);     // { user: {...} }
+      const profile = data.user;
+      setUser(profile);
 
-      const { access, refresh, user } = data;
-      const role = user.role;
-
-      console.log("LOGIN DATA:", data);
-      console.log("ROLE:", role);
-
-      // ✅ store in sessionStorage
-      sessionStorage.setItem("access", access);
-      sessionStorage.setItem("refresh", refresh);
-      sessionStorage.setItem("user", JSON.stringify(user));
-
-      setToken(access);
-      setUser(user);
-
-      // 🔥 role-based redirect
-      const roleRoutes = {
-        doctor: "/doctor/dashboard",
-        admin: "/admin/dashboard",
-        receptionist: "/reception/dashboard",
-        pharmacist: "/pharmacist/dashboard",
-        labtechnician: "/labtechnician/dashboard",
-      };
-
-      if (!roleRoutes[role]) {
-        console.error("Invalid role:", role);
+      const destination = ROLE_DASHBOARDS[profile.role];
+      if (!destination) {
+        console.error("Unknown role:", profile.role);
         return;
       }
-
-      navigate(roleRoutes[role]);
-
+      navigate(destination);
     } catch (error) {
-      console.error("LOGIN ERROR:", error);
-      alert(error || "Invalid credentials");
+      console.error("Login error:", error);
+      throw error; // re-throw so Login page can display the message
     }
   };
 
-  // 🔥 LOGOUT
-  const logout = () => {
-    sessionStorage.clear(); // ✅ clear everything
-
-    setToken(null);
-    setUser(null);
-
-    navigate("/login");
+  // LOGOUT
+  // Calls /api/auth/logout/ which deletes the HttpOnly cookies server-side.
+  const logout = async () => {
+    try {
+      await API.post("/api/auth/logout/");
+    } catch {
+      // Even if the server call fails, clear local state
+    } finally {
+      setUser(null);
+      navigate("/login");
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// custom hook
 export const useAuth = () => useContext(AuthContext);
