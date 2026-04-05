@@ -2,44 +2,99 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL, // FIX 5: defined in .env
   withCredentials: true, // sends HttpOnly cookies on every request automatically
 });
 
-// REQUEST INTERCEPTOR — no token reading needed, cookie is sent by browser
+// ─── Refresh queue ────────────────────────────────────────────────
+// Prevents multiple simultaneous 401s from each firing their own refresh.
+// All queued requests share a single refresh attempt.
+let isRefreshing = false;
+let failedQueue = [];
+
+function processQueue(error) {
+  failedQueue.forEach((p) => {
+    if (error) {
+      p.reject(error);
+    } else {
+      p.resolve();
+    }
+  });
+  failedQueue = [];
+}
+
+// ─── URLs that must NEVER be retried ─────────────────────────────
+// FIX 6: /api/auth/me/ is called on mount with no guarantee of a valid
+// cookie (e.g. first visit, after logout). Without it in this list the
+// interceptor tried to refresh → refresh also 401'd → infinite loop /
+// stale isRefreshing lock. Adding it here lets the .catch() in
+// AuthContext handle the unauthenticated state cleanly.
+const NO_RETRY_URLS = [
+  "/api/auth/refresh/",
+  "/api/auth/login/",
+  "/api/auth/logout/",
+  "/api/auth/me/",   // FIX 6: do not attempt a refresh for the session-restore call
+];
+
+const isNoRetryUrl = (config) =>
+  NO_RETRY_URLS.some((url) => config?.url?.includes(url));
+
+// ─── Request interceptor ──────────────────────────────────────────
 API.interceptors.request.use(
   (config) => config,
   (error) => Promise.reject(error)
 );
 
-// RESPONSE INTERCEPTOR — cookie-based refresh
+// ─── Response interceptor ─────────────────────────────────────────
 API.interceptors.response.use(
   (response) => response,
 
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        // Refresh token is in HttpOnly cookie — just call the endpoint,
-        // no token body needed. Django reads cookie and sets new access cookie.
-        await axios.post(
-          `${import.meta.env.VITE_API_BASE_URL}/api/auth/refresh/`,
-          {},
-          { withCredentials: true }
-        );
-
-        // Retry the original request — new access cookie is now set
-        return API(originalRequest);
-      } catch {
-        // Refresh failed — redirect to login
-        window.location.href = "/login";
-      }
+    // Not a 401, or already retried, or a protected URL — bail immediately.
+    if (
+      error.response?.status !== 401 ||
+      originalRequest._retry ||
+      isNoRetryUrl(originalRequest)
+    ) {
+      return Promise.reject(error);
     }
 
-    return Promise.reject(error);
+    // Mark so this request is never retried a second time.
+    originalRequest._retry = true;
+
+    // If a refresh is already in-flight, queue this request behind it.
+    if (isRefreshing) {
+      return new Promise((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      })
+        .then(() => API(originalRequest))
+        .catch((err) => Promise.reject(err));
+    }
+
+    isRefreshing = true;
+
+    try {
+      await axios.post(
+        `${import.meta.env.VITE_API_BASE_URL}/api/auth/refresh/`,
+        {},
+        { withCredentials: true }
+      );
+
+      // Refresh succeeded — wake up all waiting requests.
+      processQueue(null);
+      return API(originalRequest);
+    } catch (refreshError) {
+      // Refresh failed — reject every queued request and clear the user
+      // session via a custom event. AuthContext listens for this and calls
+      // logout(), which uses React Router navigate() — no hard reload.
+      processQueue(refreshError);
+      window.dispatchEvent(new CustomEvent("auth:sessionExpired"));
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
   }
 );
 
