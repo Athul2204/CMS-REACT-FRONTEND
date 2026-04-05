@@ -1,61 +1,173 @@
 import API from "../../../api";
 
-// ─── TODAY APPOINTMENTS ───────────────────────────────────────────────────────
+// 🔥 GET TODAY APPOINTMENTS + STATS
 export const getTodayAppointments = async () => {
-  const res = await API.get("/api/doctor/today-appointments/");
-  return res.data; // { message, count, data: [...] }
+  try {
+    const response = await API.get("/api/doctor/today-appointments/");
+    return response.data;
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to fetch today's appointments";
+  }
 };
 
-// ─── CONSULTATION PAGE DATA ───────────────────────────────────────────────────
+// 🔥 GET CONSULTATION PAGE
 export const getConsultationPage = async (appointmentId) => {
-  const res = await API.get(`/api/doctor/consultation/${appointmentId}/`);
-  return res.data; // { message, data: { appointment, patient, current_consultation, ... } }
+  try {
+    const response = await API.get(
+      `/api/doctor/consultation/${appointmentId}/`
+    );
+
+    return response.data;
+
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to fetch consultation data";
+  }
 };
 
-// ─── CREATE CONSULTATION ──────────────────────────────────────────────────────
-export const createConsultation = async (payload) => {
-  const res = await API.post("/api/doctor/consultations/", payload);
-  return res.data;
+// 🔥 CREATE CONSULTATION
+export const createConsultation = async (data) => {
+  try {
+    const response = await API.post(
+      "/api/doctor/consultations/",
+      data
+    );
+
+    return response.data;
+
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to create consultation";
+  }
 };
 
-// ─── CREATE LAB TEST REQUEST ──────────────────────────────────────────────────
-export const createLabTestRequest = async (payload) => {
-  const res = await API.post("/api/doctor/lab-test-request/", payload);
-  return res.data;
+// 🔥 CREATE LAB REQUEST (MULTIPLE SUPPORTED)
+export const createLabRequest = async (data) => {
+  try {
+    const response = await API.post(
+      "/api/doctor/lab-test-request/",
+      data
+    );
+
+    return response.data;
+
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to create lab request";
+  }
 };
 
-// ─── VIEW LAB RESULTS (for current consultation) ──────────────────────────────
-// Returns { message, results: [{ result_id, test_name, result_value, remarks, is_critical, created_at }] }
-export const getLabResults = async (consultationId) => {
-  const res = await API.get(`/api/doctor/lab-results/${consultationId}/`);
-  return res.data;
-};
-
-// ─── MARK LAB RESULTS AS VIEWED ───────────────────────────────────────────────
-// Doctor explicitly acknowledges they have reviewed the results.
-// POST /api/doctor/lab-results/<lab_request_id>/mark-viewed/
-export const markLabResultsViewed = async (labRequestId) => {
-  const res = await API.post(`/api/doctor/lab-results/${labRequestId}/mark-viewed/`);
-  return res.data; // { message, results_viewed, results_viewed_at }
-};
-
-// ─── CREATE PRESCRIPTION ──────────────────────────────────────────────────────
-export const createPrescription = async (payload) => {
-  const res = await API.post("/api/doctor/prescriptions/", payload);
-  return res.data;
-};
-
-// ─── LIST MEDICINES (for prescription dropdown) ───────────────────────────────
-export const getMedicines = async () => {
-  const res = await API.get("/api/pharmacist/medicines/?page_size=200");
-  const raw = res.data;
-  // DRF router returns paginated { count, results: [] } or plain array
-  return raw.results ?? raw.data ?? (Array.isArray(raw) ? raw : []);
-};
-
-// ─── LIST LAB TESTS (for lab request dropdown) ────────────────────────────────
+// 🔥 GET LAB TESTS
 export const getLabTests = async () => {
-  const res = await API.get("/api/labtechnician/lab-tests/?page_size=200");
-  const raw = res.data;
-  return raw.results ?? raw.data ?? (Array.isArray(raw) ? raw : []);
+  try {
+    const response = await API.get("/api/doctor/lab-tests/");
+    return response.data;
+
+  } catch (error) {
+    throw "Failed to fetch lab tests";
+  }
+};
+
+// 🔥 CREATE PRESCRIPTION
+export const createPrescription = async (data) => {
+  try {
+    const response = await API.post(
+      "/api/doctor/prescriptions/",
+      data
+    );
+
+    return response.data;
+
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to create prescription";
+  }
+};
+
+// 🔥 GET MEDICINES
+export const getMedicines = async () => {
+  try {
+    const response = await API.get("/api/doctor/medicines/");
+    return response.data;
+
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+
+      const message =
+        errData.message ||
+        errData.detail ||
+        JSON.stringify(errData);
+
+      throw message;
+    }
+
+    throw "Failed to fetch medicines";
+  }
+};
+
+// 🔥 GET LAB RESULTS BY CONSULTATION
+export const getLabResultsByConsultation = async (consultationId) => {
+  try {
+    const response = await API.get(`/api/doctor/lab-results/${consultationId}/`);
+    return response.data;
+  } catch (error) {
+    if (error.response && error.response.data) {
+      const errData = error.response.data;
+      const message = errData.message || errData.detail || JSON.stringify(errData);
+      throw message;
+    }
+    throw "Failed to fetch previous lab results";
+  }
 };

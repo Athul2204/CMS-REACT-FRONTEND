@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DoctorLayout from "../components/DoctorLayout";
-import { getTodayAppointments } from "../api/doctorApi";
+import { getTodayAppointments } from "../api/doctorapi";
 import { useAuth } from "../../../context/AuthContext";
 
 const StatCard = ({ label, value, color }) => (
@@ -67,7 +67,7 @@ const DoctorDashboard = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Today" value={loading ? "—" : stats.total} color="text-white" />
         <StatCard label="Scheduled" value={loading ? "—" : stats.scheduled} color="text-blue-400" />
         <StatCard label="Completed" value={loading ? "—" : stats.completed} color="text-green-400" />
