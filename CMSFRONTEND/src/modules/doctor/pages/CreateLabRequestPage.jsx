@@ -1,7 +1,7 @@
 // import React from "react";
 // import { useNavigate, useParams } from "react-router-dom";
 // import LabRequestForm from "../components/consultationpage/LabRequestForm";
-// import { createLabRequest } from "../api/doctorapi";
+// import { createLabRequest } from "../api/doctorApi";
 
 // const CreateLabRequestPage = () => {
 //   const navigate = useNavigate();
@@ -82,7 +82,7 @@
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import LabRequestForm from "../components/consultationpage/LabRequestForm";
-import { createLabRequest } from "../api/doctorapi";
+import { createLabRequest } from "../api/doctorApi";
 import { useAuth } from "../../../context/AuthContext";
 
 const CreateLabRequestPage = () => {

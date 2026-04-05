@@ -356,7 +356,7 @@
 //         const tests = tRes.data || [];
 
 //         const testsMapById = tests.reduce((acc, t) => {
-//           if (t?.lab_test_id != null) acc[t.lab_test_id] = t;
+//           if (t?.test_id != null) acc[t.test_id] = t;
 //           return acc;
 //         }, {});
 
@@ -859,9 +859,9 @@ const OrderCard = ({
         <div className="mx-4 mt-4 flex items-start gap-3 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-400/30 text-orange-300">
           <span className="text-xl leading-none mt-0.5">🚫</span>
           <div>
-            <p className="text-xs font-semibold">Results Blocked — Billing Not Paid</p>
+            <p className="text-xs font-semibold">Results Blocked — Lab Bill Not Paid</p>
             <p className="text-xs text-orange-400/80 mt-0.5">
-              Lab results can only be entered after the patient's consultation bill has been paid. Please ask the receptionist to complete billing first.
+              Go to the <strong className="text-orange-300">Billing tab</strong>, create a lab bill for this order, and mark it as Paid — then come back here to enter results.
             </p>
           </div>
         </div>
@@ -953,7 +953,7 @@ const LabResultsPage = () => {
         const tests = tRes.data || [];
 
         const testsMapById = tests.reduce((acc, t) => {
-          if (t?.lab_test_id != null) acc[t.lab_test_id] = t;
+          if (t?.test_id != null) acc[t.test_id] = t;
           return acc;
         }, {});
 
@@ -994,9 +994,13 @@ const LabResultsPage = () => {
       ? `${user.first_name} ${user.last_name || ""}`.trim()
       : user?.username || "Lab Technician";
 
+    // Build resultMap locally so it's always in scope (fixes undefined reference bug)
+    const localResultMap = {};
+    results.forEach((r) => { localResultMap[r.lab_order_item] = r; });
+
     const items = order.items || [];
     const rows = items.map((item, index) => {
-      const result = resultMap[item.order_item_id];
+      const result = localResultMap[item.order_item_id];
       const meta = getItemLabMeta(item);
 
       return `
@@ -1152,7 +1156,7 @@ const LabResultsPage = () => {
       {/* Billing gate notice */}
       <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-blue-500/5 border border-blue-400/20 text-blue-300/70 text-xs">
         <span>💡</span>
-        <span>Results can only be entered after the patient's <strong className="text-blue-300">consultation bill is paid</strong> by the receptionist.</span>
+        <span>Results can only be entered after the <strong className="text-blue-300">lab bill is created and paid</strong> in the Billing tab.</span>
       </div>
 
       {error && <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{error}</div>}

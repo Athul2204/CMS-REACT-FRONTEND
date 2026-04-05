@@ -8,7 +8,7 @@ import LabRequestsPanel from "../components/consultationpage/LabRequestsPanel";
 import HistoryNavigation from "../components/consultationpage/HistoryNavigation";
 import HistoryDetailsPanel from "../components/consultationpage/HistoryDetailsPanel";
 
-import { getConsultationPage, getLabResultsByConsultation } from "../api/doctorapi";
+import { getConsultationPage, getLabResultsByConsultation } from "../api/doctorApi";
 
 // ─── Rainbow Wrapper ──────────────────────────────────────────────
 const RainbowCard = ({ children, className = "" }) => {

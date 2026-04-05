@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DoctorLayout from "../components/DoctorLayout";
-import { getTodayAppointments } from "../api/doctorapi";
+import { getTodayAppointments } from "../api/doctorApi";
 import { useAuth } from "../../../context/AuthContext";
 
 const StatCard = ({ label, value, color }) => (

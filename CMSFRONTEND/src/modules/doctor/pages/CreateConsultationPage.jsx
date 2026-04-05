@@ -1,7 +1,7 @@
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import ConsultationForm from "../components/consultationpage/ConsultationForm";
-import { createConsultation } from "../api/doctorapi";
+import { createConsultation } from "../api/doctorApi";
 
 const CreateConsultationPage = () => {
   const navigate = useNavigate();

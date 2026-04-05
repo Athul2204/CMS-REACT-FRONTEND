@@ -1,5 +1,3 @@
-
-
 // import React, { useEffect, useState } from "react";
 // import { useNavigate, useParams } from "react-router-dom";
 // import PharmacistLayout from "../components/PharmacistLayout";
@@ -1539,7 +1537,7 @@ export const PrescriptionsPage = () => {
 
   useEffect(() => {
     getIncomingPrescriptions()
-      .then((res) => setPrescriptions(res.data || []))
+      .then((res) => setPrescriptions(res.data?.data || res.data || []))
       .catch(() => setError("Failed to load prescriptions."))
       .finally(() => setLoading(false));
   }, []);
@@ -1913,7 +1911,7 @@ export const DispensePage = () => {
         items,
       });
 
-      const dispenseData = dispenseRes.data || dispenseRes;
+      const dispenseData = dispenseRes.data?.data ?? dispenseRes.data ?? dispenseRes;
       const dispenseId = dispenseData.dispense_id;
       const totalAmount = parseFloat(dispenseData.total_amount);
       const finalDiscount = Math.min(discount, maxAllowedDiscount(totalAmount));

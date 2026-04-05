@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { getLabTests } from "../../api/doctorapi";
+import { getLabTests } from "../../api/doctorApi";
 
 const LabRequestForm = ({ onSubmit, onClose }) => {
   const [notes, setNotes] = useState("");

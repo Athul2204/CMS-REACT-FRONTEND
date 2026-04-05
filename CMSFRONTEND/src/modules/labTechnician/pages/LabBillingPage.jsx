@@ -50,13 +50,13 @@ const LabBillingPage = () => {
     setLoading(true);
     Promise.all([getLabBills(), getLabOrders(), getLabRequests(), getLabTests()])
       .then(([bRes, oRes, reqRes, testRes]) => {
-        setBills(bRes.data || []);
+        setBills(bRes || []);                    // getLabBills() now returns the array directly
         const rawOrders = oRes.data || [];
         const reqs = reqRes.data || [];
         const tests = testRes.data || [];
 
         const testsMap = tests.reduce((acc, t) => {
-          const id = t?.lab_test_id;
+          const id = t?.test_id;   // ✅ FIX: backend returns test_id not lab_test_id
           const cost = parseFloat(t?.cost || 0);
           if (id != null && Number.isFinite(cost) && cost >= 0) {
             acc[id] = cost;
@@ -108,8 +108,12 @@ const LabBillingPage = () => {
   };
 
   const billedOrderIds = new Set(bills.map((b) => b.lab_order));
+  // ✅ FIX: Show ALL orders that don't have a bill yet (not just Completed ones).
+  // Bills must be created BEFORE results are entered (payment gate), so the order
+  // is still "Pending" at billing time. Filtering for "Completed" meant the
+  // dropdown was always empty and no bill could ever be created.
   const billableOrders = orders.filter(
-    (o) => o.status === "Completed" && !billedOrderIds.has(o.order_id)
+    (o) => !billedOrderIds.has(o.order_id)
   );
 
   // When order selected, auto-calculate total from test costs and show items
@@ -440,7 +444,7 @@ const LabBillingPage = () => {
         <div>
           {billableOrders.length > 0 && (
             <span className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 px-3 py-1.5 rounded-lg">
-              {billableOrders.length} completed order{billableOrders.length !== 1 ? "s" : ""} ready to bill
+              {billableOrders.length} order{billableOrders.length !== 1 ? "s" : ""} ready to bill
             </span>
           )}
         </div>
@@ -456,7 +460,7 @@ const LabBillingPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-gray-400 block mb-1">
-                Lab Order * {!editTarget && <span className="text-gray-600">(only completed orders shown)</span>}
+                Lab Order * {!editTarget && <span className="text-gray-600">(orders without a bill are shown)</span>}
               </label>
               <select required value={form.lab_order}
                 onChange={(e) => handleOrderSelect(e.target.value)}
@@ -475,7 +479,7 @@ const LabBillingPage = () => {
                 )}
               </select>
               {!editTarget && billableOrders.length === 0 && (
-                <p className="text-xs text-gray-500 mt-1">No completed orders available to bill yet.</p>
+                <p className="text-xs text-gray-500 mt-1">All orders already have a bill, or no orders exist yet.</p>
               )}
             </div>
 

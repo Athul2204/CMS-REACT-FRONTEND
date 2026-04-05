@@ -1,7 +1,7 @@
 // import React, { useEffect, useState } from "react";
 // import { useParams, useNavigate } from "react-router-dom";
 
-// import { createPrescription } from "../api/doctorapi";
+// import { createPrescription } from "../api/doctorApi";
 // import API from "../../../api";
 
 // const PrescriptionCreatePage = () => {
@@ -31,8 +31,8 @@
 //   useEffect(() => {
 //     const fetchMedicines = async () => {
 //       try {
-//         const res = await API.get("api/doctor/medicines/");
-//         setMedicinesList(res.data);
+//         const res = await API.get("/api/doctor/medicines/");
+//         setMedicinesList(Array.isArray(res.data) ? res.data : []);
 //       } catch (err) {
 //         console.error("Failed to fetch medicines");
 //       }
@@ -287,7 +287,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-import { createPrescription } from "../api/doctorapi";
+import { createPrescription } from "../api/doctorApi";
 import { useAuth } from "../../../context/AuthContext";
 import API from "../../../api";
 
@@ -319,8 +319,8 @@ const PrescriptionCreatePage = () => {
   useEffect(() => {
     const fetchMedicines = async () => {
       try {
-        const res = await API.get("api/doctor/medicines/");
-        setMedicinesList(res.data);
+        const res = await API.get("/api/doctor/medicines/");
+        setMedicinesList(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         console.error("Failed to fetch medicines");
       }
