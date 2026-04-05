@@ -83,7 +83,8 @@ export const deleteLabResult = async (id) => {
 // ─── LAB BILLS ────────────────────────────────────────────────────
 export const getLabBills = async () => {
   const res = await API.get("/api/labtechnician/lab-bills/");
-  return res.data;
+  // Backend returns { message, count, data: [...] } — unwrap to always return the array
+  return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
 };
 
 export const createLabBill = async (payload) => {
