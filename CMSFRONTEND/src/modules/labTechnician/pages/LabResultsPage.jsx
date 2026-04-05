@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from "react";
 import LabLayout from "../components/LabLayout";
+import { useAuth } from "../../../context/AuthContext";
 import {
   getLabResults,
   createLabResult,
   updateLabResult,
   deleteLabResult,
+  getLabBills,
   getLabOrders,
   getLabRequests,
+  getLabTests,
 } from "../api/labApi";
-import API from "../../../api";
 
 const buildPatientMap = (reqs) => {
   const map = {};
@@ -18,7 +20,77 @@ const buildPatientMap = (reqs) => {
   return map;
 };
 
-const ResultForm = ({ item, existingResult, onSaved, onCancel }) => {
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const parseRangeRule = (normalRangeText) => {
+  const text = String(normalRangeText || "").trim();
+  if (!text) return null;
+
+  const betweenMatch = text.match(/(-?\d+(?:\.\d+)?)\s*[–-]\s*(-?\d+(?:\.\d+)?)/);
+  if (betweenMatch) {
+    return {
+      type: "between",
+      min: parseFloat(betweenMatch[1]),
+      max: parseFloat(betweenMatch[2]),
+      raw: text,
+    };
+  }
+
+  const comparatorMatch = text.match(/(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)/);
+  if (comparatorMatch) {
+    return {
+      type: comparatorMatch[1],
+      value: parseFloat(comparatorMatch[2]),
+      raw: text,
+    };
+  }
+
+  return null;
+};
+
+const validateResultValue = (rawValue, normalRangeText) => {
+  const rule = parseRangeRule(normalRangeText);
+  if (!rule) return { error: "", warning: "" };
+
+  const value = String(rawValue || "").trim();
+  const numericPattern = /^-?\d+(?:\.\d+)?$/;
+  if (!numericPattern.test(value)) {
+    return {
+      error: "This test expects a numeric result (example: 4.8).",
+      warning: "",
+    };
+  }
+
+  const numericValue = parseFloat(value);
+  let outOfRange = false;
+
+  if (rule.type === "between") {
+    outOfRange = numericValue < rule.min || numericValue > rule.max;
+  } else if (rule.type === "<") {
+    outOfRange = !(numericValue < rule.value);
+  } else if (rule.type === "<=") {
+    outOfRange = !(numericValue <= rule.value);
+  } else if (rule.type === ">") {
+    outOfRange = !(numericValue > rule.value);
+  } else if (rule.type === ">=") {
+    outOfRange = !(numericValue >= rule.value);
+  }
+
+  return {
+    error: "",
+    warning: outOfRange
+      ? `Result ${numericValue} is outside reference range (${rule.raw}). You can still save if clinically intended.`
+      : "",
+  };
+};
+
+const ResultForm = ({ item, existingResult, labMeta, onSaved, onCancel }) => {
   const [form, setForm] = useState({
     lab_order_item: item.order_item_id,
     result_value: existingResult?.result_value || "",
@@ -27,9 +99,18 @@ const ResultForm = ({ item, existingResult, onSaved, onCancel }) => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
 
   const handleSubmit = async () => {
     if (!form.result_value.trim()) { setError("Result value is required."); return; }
+
+    const validation = validateResultValue(form.result_value, labMeta?.normal_range);
+    if (validation.error) {
+      setError(validation.error);
+      return;
+    }
+
+    setWarning(validation.warning || "");
     setSubmitting(true);
     setError("");
     try {
@@ -55,12 +136,20 @@ const ResultForm = ({ item, existingResult, onSaved, onCancel }) => {
   return (
     <div className="mt-3 bg-[#060d1a] border border-cyan-400/30 rounded-xl p-4 space-y-3">
       {error && <div className="text-red-400 text-xs bg-red-400/10 border border-red-400/30 px-3 py-2 rounded-lg">{error}</div>}
+      {warning && <div className="text-yellow-300 text-xs bg-yellow-400/10 border border-yellow-400/30 px-3 py-2 rounded-lg">{warning}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-gray-400 block mb-1">Result Value *</label>
           <input type="text" value={form.result_value}
             onChange={(e) => setForm({ ...form, result_value: e.target.value })}
             placeholder="e.g. 12.5 g/dL, Negative, Normal" className={inp} autoFocus />
+          {(labMeta?.unit || labMeta?.normal_range) && (
+            <p className="text-[11px] text-gray-500 mt-1">
+              {labMeta?.unit ? `Unit: ${labMeta.unit}` : ""}
+              {labMeta?.unit && labMeta?.normal_range ? " | " : ""}
+              {labMeta?.normal_range ? `Reference: ${labMeta.normal_range}` : ""}
+            </p>
+          )}
         </div>
         <div>
           <label className="text-xs text-gray-400 block mb-1">Remarks (optional)</label>
@@ -90,7 +179,14 @@ const ResultForm = ({ item, existingResult, onSaved, onCancel }) => {
   );
 };
 
-const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
+const OrderCard = ({
+  order,
+  resultMap,
+  onRefresh,
+  billedOrderIds,
+  onPrintReport,
+  getItemLabMeta,
+}) => {
   const [openItemId, setOpenItemId] = useState(null);
   const items = order.items || [];
   const total = items.length;
@@ -144,6 +240,15 @@ const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
           <span className={`text-xs px-2 py-1 rounded border ${allDone ? "bg-green-400/10 text-green-400 border-green-400/30" : "bg-yellow-400/10 text-yellow-400 border-yellow-400/30"}`}>
             {allDone ? "✓ Completed" : "Pending"}
           </span>
+          {allDone && (
+            <button
+              type="button"
+              onClick={() => onPrintReport(order)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-blue-400/40 text-blue-300 hover:text-blue-200 transition"
+            >
+              Print Report
+            </button>
+          )}
           {billingBlocked && (
             <span className="text-xs px-2 py-1 rounded border bg-orange-400/10 text-orange-400 border-orange-400/30">
               💳 Bill Pending
@@ -171,6 +276,7 @@ const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
       <div className="p-4 space-y-2">
         {items.map((item) => {
           const result = resultMap[item.order_item_id];
+          const labMeta = getItemLabMeta(item);
           const isOpen = openItemId === item.order_item_id;
           return (
             <div key={item.order_item_id} className="bg-[#060d1a] rounded-xl p-4">
@@ -217,7 +323,7 @@ const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
                 </div>
               </div>
               {isOpen && !billingBlocked && (
-                <ResultForm item={item} existingResult={result || null}
+                <ResultForm item={item} existingResult={result || null} labMeta={labMeta}
                   onSaved={() => { setOpenItemId(null); onRefresh(); }}
                   onCancel={() => setOpenItemId(null)} />
               )}
@@ -230,9 +336,12 @@ const OrderCard = ({ order, resultMap, onRefresh, billedOrderIds }) => {
 };
 
 const LabResultsPage = () => {
+  const { user } = useAuth();
   const [orders, setOrders] = useState([]);
   const [results, setResults] = useState([]);
   const [bills, setBills] = useState([]);
+  const [labTestsById, setLabTestsById] = useState({});
+  const [labTestsByName, setLabTestsByName] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("Pending");
@@ -240,11 +349,26 @@ const LabResultsPage = () => {
   const fetchAll = () => {
     setLoading(true);
     setError("");
-    Promise.all([getLabOrders(), getLabResults(), getLabRequests(),
-      import("../api/labApi").then(m => m.getLabBills())])
-      .then(([oRes, rRes, reqRes, bRes]) => {
+    Promise.all([getLabOrders(), getLabResults(), getLabRequests(), getLabBills(), getLabTests()])
+      .then(([oRes, rRes, reqRes, bRes, tRes]) => {
         const rawOrders = oRes.data || [];
         const reqs = reqRes.data || [];
+        const tests = tRes.data || [];
+
+        const testsMapById = tests.reduce((acc, t) => {
+          if (t?.lab_test_id != null) acc[t.lab_test_id] = t;
+          return acc;
+        }, {});
+
+        const testsMapByName = tests.reduce((acc, t) => {
+          const key = String(t?.test_name || "").trim().toLowerCase();
+          if (key) acc[key] = t;
+          return acc;
+        }, {});
+
+        setLabTestsById(testsMapById);
+        setLabTestsByName(testsMapByName);
+
         const patientMap = buildPatientMap(reqs);
         const enriched = rawOrders.map((o) => ({
           ...o,
@@ -259,6 +383,144 @@ const LabResultsPage = () => {
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  const getItemLabMeta = (item) => {
+    const byId = labTestsById[item?.lab_test];
+    if (byId) return byId;
+
+    const key = String(item?.lab_test_name || "").trim().toLowerCase();
+    return key ? labTestsByName[key] : null;
+  };
+
+  const handlePrintReport = (order) => {
+    const generatedBy = user?.first_name
+      ? `${user.first_name} ${user.last_name || ""}`.trim()
+      : user?.username || "Lab Technician";
+
+    const items = order.items || [];
+    const rows = items.map((item, index) => {
+      const result = resultMap[item.order_item_id];
+      const meta = getItemLabMeta(item);
+
+      return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(item.lab_test_name || `Test #${item.lab_test}`)}</td>
+          <td>${escapeHtml(result?.result_value || "--")}</td>
+          <td>${escapeHtml(meta?.unit || "--")}</td>
+          <td>${escapeHtml(meta?.normal_range || "--")}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const reportDate = new Date().toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Lab Report ${escapeHtml(order.order_number)}</title>
+        <style>
+          @page { size: A4; margin: 14mm; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; }
+          .report { border: 1px solid #cbd5e1; border-radius: 10px; padding: 16px; }
+          .top { display:flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+          .title { font-size: 24px; font-weight: 700; margin: 0; }
+          .sub { margin-top: 4px; color: #64748b; font-size: 12px; }
+          .meta { display:grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 12px 0; font-size: 13px; }
+          table { width:100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #dbe3ef; padding: 7px; vertical-align: top; }
+          th { background: #f1f5f9; text-align: left; }
+          .footer { margin-top: 18px; display:flex; justify-content: space-between; font-size: 12px; }
+          .line { border-top: 1px solid #94a3b8; width: 220px; margin-top: 28px; padding-top: 5px; text-align: center; }
+          .note { margin-top: 10px; font-size: 11px; color:#64748b; }
+        </style>
+      </head>
+      <body>
+        <section class="report">
+          <div class="top">
+            <div>
+              <h1 class="title">Lab Report</h1>
+              <div class="sub">Hospital Management System</div>
+            </div>
+            <div style="text-align:right;font-size:12px;">
+              <div><strong>Date:</strong> ${escapeHtml(reportDate)}</div>
+              <div><strong>Order:</strong> ${escapeHtml(order.order_number || `#${order.order_id}`)}</div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div><strong>Patient:</strong> ${escapeHtml(order.patient_name || `Patient #${order.patient}`)}</div>
+            <div><strong>Order Status:</strong> ${escapeHtml(order.status || "--")}</div>
+            <div><strong>Reported By:</strong> ${escapeHtml(generatedBy)}</div>
+            <div><strong>Collected Date:</strong> ${escapeHtml(order.created_at ? new Date(order.created_at).toLocaleDateString("en-IN") : "--")}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width:45px;">No.</th>
+                <th style="width:210px;">Test</th>
+                <th style="width:150px;">Result</th>
+                <th style="width:110px;">Unit</th>
+                <th>Reference Range</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || `<tr><td colspan="5" style="text-align:center; color:#64748b;">No results found</td></tr>`}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div class="line">Lab Technician Signature</div>
+            <div class="line">Doctor Verification</div>
+          </div>
+
+          <div class="note">This is a system-generated clinical report.</div>
+        </section>
+      </body>
+      </html>
+    `;
+
+    const frame = document.createElement("iframe");
+    const htmlBlob = new Blob([html], { type: "text/html" });
+    const htmlUrl = URL.createObjectURL(htmlBlob);
+
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.setAttribute("aria-hidden", "true");
+
+    frame.onload = () => {
+      try {
+        const printWin = frame.contentWindow;
+        if (!printWin) throw new Error("Print frame unavailable");
+
+        setTimeout(() => {
+          printWin.focus();
+          printWin.print();
+        }, 180);
+      } catch {
+        setError("Could not open print dialog for lab report.");
+      }
+
+      setTimeout(() => {
+        URL.revokeObjectURL(htmlUrl);
+        frame.remove();
+      }, 1600);
+    };
+
+    document.body.appendChild(frame);
+    frame.src = htmlUrl;
+  };
 
   const resultMap = {};
   results.forEach((r) => { resultMap[r.lab_order_item] = r; });
@@ -315,7 +577,15 @@ const LabResultsPage = () => {
       ) : (
         <div className="space-y-4">
           {filteredOrders.map((order) => (
-            <OrderCard key={order.order_id} order={order} resultMap={resultMap} onRefresh={fetchAll} billedOrderIds={billedOrderIds} />
+            <OrderCard
+              key={order.order_id}
+              order={order}
+              resultMap={resultMap}
+              onRefresh={fetchAll}
+              billedOrderIds={billedOrderIds}
+              onPrintReport={handlePrintReport}
+              getItemLabMeta={getItemLabMeta}
+            />
           ))}
         </div>
       )}

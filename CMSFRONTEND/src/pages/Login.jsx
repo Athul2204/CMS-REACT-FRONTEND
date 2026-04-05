@@ -123,6 +123,8 @@ const Login = () => {
     username: "",
     password: "",
   });
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e) => {
     setFormData({
@@ -133,7 +135,22 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await login(formData);
+    if (isSubmitting) return;
+
+    setErrorMessage("");
+    setIsSubmitting(true);
+
+    try {
+      await login(formData);
+    } catch (error) {
+      const message =
+        typeof error === "string"
+          ? error
+          : error?.message || "Login failed. Please try again.";
+      setErrorMessage(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -173,6 +190,12 @@ const Login = () => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
+          {errorMessage && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
+              {errorMessage}
+            </div>
+          )}
+
           {/* Username */}
           <div className="flex items-center border border-gray-300 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-[#D4AF37] transition">
             <MdPerson className="text-gray-400 text-xl mr-2" />
@@ -211,9 +234,10 @@ const Login = () => {
           {/* Button */}
           <button
             type="submit"
-            className="bg-[#D4AF37] text-[#1B4360] py-3 rounded-lg font-semibold hover:bg-yellow-400 transition shadow-md"
+            disabled={isSubmitting}
+            className="bg-[#D4AF37] text-[#1B4360] py-3 rounded-lg font-semibold hover:bg-yellow-400 transition shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Login
+            {isSubmitting ? "Signing in..." : "Login"}
           </button>
 
         </form>
