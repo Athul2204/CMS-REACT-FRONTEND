@@ -1,8 +1,14 @@
 // src/api/index.js
 import axios from "axios";
 
+const rawBaseURL = (import.meta.env.VITE_API_BASE_URL || "").trim();
+const shouldUseDevProxy =
+  import.meta.env.DEV &&
+  (!rawBaseURL || /^(https?:\/\/)?localhost:8000\/?$/.test(rawBaseURL));
+const apiBaseURL = shouldUseDevProxy ? "" : rawBaseURL;
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL, // FIX 5: defined in .env
+  baseURL: apiBaseURL,
   withCredentials: true, // sends HttpOnly cookies on every request automatically
 });
 
@@ -76,8 +82,12 @@ API.interceptors.response.use(
     isRefreshing = true;
 
     try {
+      const refreshUrl = apiBaseURL
+        ? `${apiBaseURL}/api/auth/refresh/`
+        : "/api/auth/refresh/";
+
       await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL}/api/auth/refresh/`,
+        refreshUrl,
         {},
         { withCredentials: true }
       );

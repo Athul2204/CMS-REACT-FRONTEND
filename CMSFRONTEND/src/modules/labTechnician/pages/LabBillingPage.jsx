@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import LabLayout from "../components/LabLayout";
+import { useAuth } from "../../../context/AuthContext";
 import {
   getLabBills,
   createLabBill,
@@ -7,6 +8,7 @@ import {
   deleteLabBill,
   getLabOrders,
   getLabRequests,
+  getLabTests,
 } from "../api/labApi";
 
 const buildPatientMap = (reqs) => {
@@ -17,9 +19,20 @@ const buildPatientMap = (reqs) => {
   return map;
 };
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 const LabBillingPage = () => {
+  const { user } = useAuth();
   const [bills, setBills] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [labTestsById, setLabTestsById] = useState({});
+  const [labTestsByName, setLabTestsByName] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -35,11 +48,34 @@ const LabBillingPage = () => {
 
   const fetchAll = () => {
     setLoading(true);
-    Promise.all([getLabBills(), getLabOrders(), getLabRequests()])
-      .then(([bRes, oRes, reqRes]) => {
+    Promise.all([getLabBills(), getLabOrders(), getLabRequests(), getLabTests()])
+      .then(([bRes, oRes, reqRes, testRes]) => {
         setBills(bRes.data || []);
         const rawOrders = oRes.data || [];
         const reqs = reqRes.data || [];
+        const tests = testRes.data || [];
+
+        const testsMap = tests.reduce((acc, t) => {
+          const id = t?.lab_test_id;
+          const cost = parseFloat(t?.cost || 0);
+          if (id != null && Number.isFinite(cost) && cost >= 0) {
+            acc[id] = cost;
+          }
+          return acc;
+        }, {});
+
+        const testsNameMap = tests.reduce((acc, t) => {
+          const name = String(t?.test_name || "").trim().toLowerCase();
+          const cost = parseFloat(t?.cost || 0);
+          if (name && Number.isFinite(cost) && cost >= 0) {
+            acc[name] = cost;
+          }
+          return acc;
+        }, {});
+
+        setLabTestsById(testsMap);
+        setLabTestsByName(testsNameMap);
+
         const patientMap = buildPatientMap(reqs);
         const enriched = rawOrders.map((o) => ({
           ...o,
@@ -53,6 +89,24 @@ const LabBillingPage = () => {
 
   useEffect(() => { fetchAll(); }, []);
 
+  const resolveItemCost = (item) => {
+    const itemCost = parseFloat(item?.lab_test_cost || 0);
+    if (Number.isFinite(itemCost) && itemCost > 0) return itemCost;
+
+    const testId =
+      typeof item?.lab_test === "object" ? item?.lab_test?.lab_test_id : item?.lab_test;
+    const catalogCostById = parseFloat(labTestsById[testId] || 0);
+    if (Number.isFinite(catalogCostById) && catalogCostById > 0) {
+      return catalogCostById;
+    }
+
+    const testName = String(item?.lab_test_name || item?.lab_test?.test_name || "")
+      .trim()
+      .toLowerCase();
+    const catalogCostByName = parseFloat(labTestsByName[testName] || 0);
+    return Number.isFinite(catalogCostByName) && catalogCostByName > 0 ? catalogCostByName : 0;
+  };
+
   const billedOrderIds = new Set(bills.map((b) => b.lab_order));
   const billableOrders = orders.filter(
     (o) => o.status === "Completed" && !billedOrderIds.has(o.order_id)
@@ -65,12 +119,21 @@ const LabBillingPage = () => {
     let items = [];
     if (order?.items?.length) {
       items = order.items;
-      const total = order.items.reduce((sum, it) => sum + parseFloat(it.lab_test_cost || 0), 0);
+      const total = order.items.reduce((sum, it) => sum + resolveItemCost(it), 0);
       if (total > 0) autoTotal = total.toFixed(2);
     }
     setSelectedOrderItems(items);
-    setForm({ ...form, lab_order: orderId, total_amount: autoTotal });
+    setForm((prev) => ({ ...prev, lab_order: orderId, total_amount: autoTotal }));
   };
+
+  useEffect(() => {
+    if (!showForm || !form.lab_order || editTarget) return;
+
+    const total = selectedOrderItems.reduce((sum, it) => sum + resolveItemCost(it), 0);
+    const nextTotal = total > 0 ? total.toFixed(2) : "";
+
+    setForm((prev) => (prev.total_amount === nextTotal ? prev : { ...prev, total_amount: nextTotal }));
+  }, [showForm, form.lab_order, selectedOrderItems, labTestsById, labTestsByName, editTarget]);
 
   const openEdit = (bill) => {
     setEditTarget(bill);
@@ -98,10 +161,26 @@ const LabBillingPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.total_amount || parseFloat(form.total_amount) < 0) {
-      setError("Enter a valid total amount.");
+    if (!form.lab_order) {
+      setError("Please select a lab order.");
       return;
     }
+    if (!form.total_amount || parseFloat(form.total_amount) < 0) {
+      setError("Total amount is auto-calculated from selected tests.");
+      return;
+    }
+
+    const totalAmount = parseFloat(form.total_amount || 0);
+    const discountAmount = parseFloat(form.discount || 0);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      setError("Discount must be a valid non-negative number.");
+      return;
+    }
+    if (discountAmount > totalAmount) {
+      setError("Discount cannot exceed the total amount.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     try {
@@ -144,6 +223,179 @@ const LabBillingPage = () => {
     if (!window.confirm("Delete this bill?")) return;
     try { await deleteLabBill(id); setSuccess("Bill deleted."); fetchAll(); }
     catch { setError("Failed to delete bill."); }
+  };
+
+  const handlePrintBill = (bill, relatedOrder) => {
+    const tests = relatedOrder?.items || [];
+    const patientName = relatedOrder?.patient_name || bill.patient_name || `Patient #${bill.lab_order}`;
+    const generatedBy = user?.first_name
+      ? `${user.first_name} ${user.last_name || ""}`.trim()
+      : user?.username || "Lab Technician";
+    const dateText = new Date().toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+    const parsedTotal = parseFloat(bill.total_amount || 0);
+    const explicitAmounts = tests.map((it) => {
+      const value = resolveItemCost(it);
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    });
+
+    // If backend does not provide per-test costs, derive printable amounts
+    // from bill total so multi-test invoices still show meaningful amounts.
+    const printableAmounts = [...explicitAmounts];
+    const missingIndexes = printableAmounts
+      .map((amount, index) => (amount <= 0 ? index : -1))
+      .filter((index) => index !== -1);
+
+    if (missingIndexes.length > 0 && parsedTotal > 0) {
+      const explicitSum = printableAmounts.reduce((sum, amount) => sum + amount, 0);
+      const remainder = parsedTotal - explicitSum;
+
+      if (remainder > 0) {
+        const totalCents = Math.round(remainder * 100);
+        const eachCents = Math.floor(totalCents / missingIndexes.length);
+        let extraCents = totalCents - eachCents * missingIndexes.length;
+
+        missingIndexes.forEach((index) => {
+          const cents = eachCents + (extraCents > 0 ? 1 : 0);
+          printableAmounts[index] = cents / 100;
+          if (extraCents > 0) extraCents -= 1;
+        });
+      }
+    }
+
+    const testsRows = tests.length
+      ? tests
+          .map(
+            (it, idx) => {
+              const displayAmount = printableAmounts[idx] || 0;
+
+              return `
+              <tr>
+                <td>${idx + 1}</td>
+                <td>${escapeHtml(it.lab_test_name || `Test #${it.lab_test}`)}</td>
+                <td style="text-align:right;">Rs ${displayAmount.toFixed(2)}</td>
+              </tr>
+            `;
+            }
+          )
+          .join("")
+      : `
+        <tr>
+          <td colspan="3" style="text-align:center;color:#6b7280;">No test items available</td>
+        </tr>
+      `;
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Bill ${escapeHtml(bill.bill_number)}</title>
+        <style>
+          @page { size: A4; margin: 14mm; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; }
+          .invoice { border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; }
+          .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+          .title { font-size: 22px; font-weight: 700; margin: 0; }
+          .muted { color: #64748b; font-size: 12px; margin-top: 4px; }
+          .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; font-size: 13px; margin: 14px 0 16px; }
+          .meta strong { color: #334155; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+          th { background: #f1f5f9; text-align: left; }
+          th, td { border: 1px solid #e2e8f0; padding: 8px; }
+          .totals { margin-top: 14px; margin-left: auto; width: 290px; border: 1px solid #e2e8f0; border-radius: 8px; }
+          .totals-row { display: flex; justify-content: space-between; padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+          .totals-row:last-child { border-bottom: none; font-weight: 700; font-size: 15px; }
+          .status { margin-top: 10px; font-size: 12px; color: #0f766e; font-weight: 600; }
+          .footer { margin-top: 16px; font-size: 11px; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <section class="invoice">
+          <div class="top">
+            <div>
+              <h1 class="title">Lab Invoice</h1>
+              <p class="muted">Hospital Management System</p>
+            </div>
+            <div style="text-align:right; font-size:12px;">
+              <div><strong>Date:</strong> ${escapeHtml(dateText)}</div>
+              <div><strong>Bill No:</strong> ${escapeHtml(bill.bill_number)}</div>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div><strong>Patient:</strong> ${escapeHtml(patientName)}</div>
+            <div><strong>Order:</strong> ${escapeHtml(bill.lab_order_number || `#${bill.lab_order}`)}</div>
+            <div><strong>Payment Status:</strong> ${escapeHtml(bill.payment_status)}</div>
+            <div><strong>Generated By:</strong> ${escapeHtml(generatedBy)}</div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width:55px;">No.</th>
+                <th>Test</th>
+                <th style="width:140px; text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${testsRows}
+            </tbody>
+          </table>
+
+          <div class="totals">
+            <div class="totals-row"><span>Total</span><span>Rs ${escapeHtml(parseFloat(bill.total_amount || 0).toFixed(2))}</span></div>
+            <div class="totals-row"><span>Discount</span><span>Rs ${escapeHtml(parseFloat(bill.discount || 0).toFixed(2))}</span></div>
+            <div class="totals-row"><span>Final</span><span>Rs ${escapeHtml(parseFloat(bill.final_amount || 0).toFixed(2))}</span></div>
+          </div>
+
+          <p class="status">${bill.payment_status === "Paid" ? "Payment received" : "Payment pending"}</p>
+          <p class="footer">This is a system-generated invoice.</p>
+        </section>
+      </body>
+      </html>
+    `;
+
+    const frame = document.createElement("iframe");
+    const htmlBlob = new Blob([printHtml], { type: "text/html" });
+    const htmlUrl = URL.createObjectURL(htmlBlob);
+
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    frame.setAttribute("aria-hidden", "true");
+
+    frame.onload = () => {
+      try {
+        const printWin = frame.contentWindow;
+        if (!printWin) {
+          throw new Error("Print frame is unavailable");
+        }
+
+        // Give Edge a brief moment to fully render the loaded HTML before print.
+        setTimeout(() => {
+          printWin.focus();
+          printWin.print();
+        }, 180);
+      } catch {
+        setError("Could not open print dialog. Please try again.");
+      }
+
+      setTimeout(() => {
+        URL.revokeObjectURL(htmlUrl);
+        frame.remove();
+      }, 1600);
+    };
+
+    document.body.appendChild(frame);
+    frame.src = htmlUrl;
   };
 
   const finalAmt = (total, discount) => {
@@ -231,8 +483,10 @@ const LabBillingPage = () => {
               <label className="text-xs text-gray-400 block mb-1">Total Amount (₹) *</label>
               <input type="number" step="0.01" min="0" required
                 value={form.total_amount}
-                onChange={(e) => setForm({ ...form, total_amount: e.target.value })}
-                placeholder="e.g. 500.00" className={inp} />
+                readOnly
+                placeholder="Auto-calculated from selected tests"
+                className={`${inp} bg-[#0b1324] cursor-not-allowed`} />
+              <p className="text-[11px] text-gray-500 mt-1">Auto-calculated from selected test rates.</p>
             </div>
 
             <div>
@@ -274,14 +528,14 @@ const LabBillingPage = () => {
                         🧪 {it.lab_test_name || `Test #${it.lab_test}`}
                       </td>
                       <td className="px-4 py-2 text-right text-cyan-400 font-medium">
-                        {it.lab_test_cost ? `₹${parseFloat(it.lab_test_cost).toFixed(2)}` : <span className="text-gray-600">—</span>}
+                        {resolveItemCost(it) > 0 ? `₹${resolveItemCost(it).toFixed(2)}` : <span className="text-gray-600">—</span>}
                       </td>
                     </tr>
                   ))}
                   <tr className="bg-[#0d1629]">
                     <td className="px-4 py-2 text-gray-400 font-semibold">Subtotal</td>
                     <td className="px-4 py-2 text-right text-white font-bold">
-                      ₹{selectedOrderItems.reduce((sum, it) => sum + parseFloat(it.lab_test_cost || 0), 0).toFixed(2)}
+                      ₹{selectedOrderItems.reduce((sum, it) => sum + resolveItemCost(it), 0).toFixed(2)}
                     </td>
                   </tr>
                 </tbody>
@@ -360,7 +614,7 @@ const LabBillingPage = () => {
                             {relatedOrder.items.map((it) => (
                               <span key={it.order_item_id} className="text-xs bg-purple-400/10 text-purple-300 border border-purple-400/20 px-2 py-0.5 rounded">
                                 🧪 {it.lab_test_name || `Test #${it.lab_test}`}
-                                {it.lab_test_cost ? <span className="ml-1 text-cyan-400/80">₹{parseFloat(it.lab_test_cost).toFixed(0)}</span> : null}
+                                {resolveItemCost(it) > 0 ? <span className="ml-1 text-cyan-400/80">₹{resolveItemCost(it).toFixed(0)}</span> : null}
                               </span>
                             ))}
                           </div>
@@ -384,6 +638,8 @@ const LabBillingPage = () => {
                           )}
                           <button onClick={() => openEdit(bill)}
                             className="text-xs text-cyan-400 hover:text-cyan-300 border border-cyan-400/30 px-3 py-1.5 rounded-lg transition">Edit</button>
+                          <button onClick={() => handlePrintBill(bill, relatedOrder)}
+                            className="text-xs text-blue-300 hover:text-blue-200 border border-blue-300/40 px-3 py-1.5 rounded-lg transition">Print PDF</button>
                           <button onClick={() => handleDelete(bill.lab_bill_id)}
                             className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 px-3 py-1.5 rounded-lg transition">Del</button>
                         </div>

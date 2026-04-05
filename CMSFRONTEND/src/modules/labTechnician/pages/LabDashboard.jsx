@@ -17,7 +17,7 @@ const StatCard = ({ label, value, color, icon }) => (
 );
 
 const LabDashboard = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
   const [tests, setTests] = useState([]);
@@ -27,6 +27,18 @@ const LabDashboard = () => {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (user.role !== "labtechnician") {
+      navigate("/unauthorized", { replace: true });
+      return;
+    }
+
     Promise.all([
       getLabOrders(),
       getLabTests(),
@@ -39,9 +51,9 @@ const LabDashboard = () => {
         setBills(bRes.data || []);
         setEquipment(eRes.data || []);
       })
-      .catch(() => setError("Failed to load dashboard data."))
+        .catch(() => setError("Failed to load dashboard data."))
       .finally(() => setLoading(false));
-  }, []);
+      }, [authLoading, user, navigate]);
 
   const pendingOrders = orders.filter((o) => o.status === "Pending").length;
   const completedOrders = orders.filter((o) => o.status === "Completed").length;
