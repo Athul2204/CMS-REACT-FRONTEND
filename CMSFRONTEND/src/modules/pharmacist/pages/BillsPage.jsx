@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from "react";
 import PharmacistLayout from "../components/PharmacistLayout";
-import { getMedicineBills } from "../api/pharmacistApi";
-import API from "../../../api";
-
+// import { getMedicineBills } from "../api/pharmacistApi";
+// import API from "../../../api";
+import {
+  getMedicineBills,
+  getMedicineBillDetail,
+  updateMedicineBill,
+} from "../api/pharmacistApi";
 // ─── BILLS PAGE ───────────────────────────────────────────────────────────────
 const BillsPage = () => {
   const [bills, setBills] = useState([]);
@@ -20,6 +24,16 @@ const BillsPage = () => {
       .catch(() => setError("Failed to load bills."))
       .finally(() => setLoading(false));
   };
+  const handleViewBill = async (bill) => {
+  setError("");
+  try {
+    const res = await getMedicineBillDetail(bill.bill_id);
+    const fullBill = res.data || res;
+    setSelectedBill(fullBill);
+  } catch (err) {
+    setError("Failed to load bill details.");
+  }
+};
 
   useEffect(() => {
     fetchBills();
@@ -36,27 +50,54 @@ const BillsPage = () => {
     .filter((b) => b.payment_status === "Pending")
     .reduce((sum, b) => sum + parseFloat(b.final_amount || 0), 0);
 
+  // const handleMarkPaid = async (bill) => {
+  //   setMarkingPaid(bill.bill_id);
+  //   setError("");
+  //   try {
+  //     await API.patch(`/api/pharmacist/bills/${bill.bill_id}/`, {
+  //       payment_status: "Paid",
+  //     });
+  //     setSuccess(`Bill #${bill.bill_id} marked as paid.`);
+  //     fetchBills();
+  //     if (selectedBill?.bill_id === bill.bill_id) {
+  //       setSelectedBill({ ...selectedBill, payment_status: "Paid" });
+  //     }
+  //   } catch (err) {
+  //     const msg = err?.response?.data
+  //       ? JSON.stringify(err.response.data)
+  //       : "Failed to update bill.";
+  //     setError(msg);
+  //   } finally {
+  //     setMarkingPaid(null);
+  //   }
+  // };
   const handleMarkPaid = async (bill) => {
-    setMarkingPaid(bill.bill_id);
-    setError("");
-    try {
-      await API.patch(`/api/pharmacist/bills/${bill.bill_id}/`, {
-        payment_status: "Paid",
-      });
-      setSuccess(`Bill #${bill.bill_id} marked as paid.`);
-      fetchBills();
-      if (selectedBill?.bill_id === bill.bill_id) {
-        setSelectedBill({ ...selectedBill, payment_status: "Paid" });
-      }
-    } catch (err) {
-      const msg = err?.response?.data
+  setMarkingPaid(bill.bill_id);
+  setError("");
+  setSuccess("");
+
+  try {
+    const res = await updateMedicineBill(bill.bill_id, {
+      ...bill,
+      payment_status: "Paid",
+    });
+
+    setSuccess(`Bill #${bill.bill_id} marked as paid.`);
+    fetchBills();
+
+    if (selectedBill?.bill_id === bill.bill_id) {
+      setSelectedBill(res.data || res);
+    }
+  } catch (err) {
+    const msg =
+      err?.response?.data
         ? JSON.stringify(err.response.data)
         : "Failed to update bill.";
-      setError(msg);
-    } finally {
-      setMarkingPaid(null);
-    }
-  };
+    setError(msg);
+  } finally {
+    setMarkingPaid(null);
+  }
+};
 
   return (
     <PharmacistLayout title="Medicine Bills">
@@ -174,7 +215,12 @@ const BillsPage = () => {
                   filteredBills.map((bill) => (
                     <tr
                       key={bill.bill_id}
-                      onClick={() => setSelectedBill(selectedBill?.bill_id === bill.bill_id ? null : bill)}
+                      onClick={() =>
+                        selectedBill?.bill_id === bill.bill_id
+                          ? setSelectedBill(null)
+                          : handleViewBill(bill)
+                      }
+                      //onClick={() => setSelectedBill(selectedBill?.bill_id === bill.bill_id ? null : bill)}
                       className={`border-b border-[#1e2d4a] hover:bg-[#111d35] transition-colors cursor-pointer ${
                         selectedBill?.bill_id === bill.bill_id ? "bg-[#111d35]" : ""
                       }`}
@@ -212,7 +258,7 @@ const BillsPage = () => {
                           ? new Date(bill.created_at).toLocaleDateString("en-IN")
                           : "—"}
                       </td>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      {/* <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         {bill.payment_status === "Pending" && (
                           <button
                             onClick={() => handleMarkPaid(bill)}
@@ -225,6 +271,30 @@ const BillsPage = () => {
                         {bill.payment_status === "Paid" && (
                           <span className="text-xs text-green-400 opacity-60">✓ Paid</span>
                         )}
+                      </td> */}
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleViewBill(bill)}
+                            className="text-xs text-blue-400 hover:text-blue-300 border border-blue-400/30 px-3 py-1.5 rounded-lg transition"
+                          >
+                            View
+                          </button>
+
+                          {bill.payment_status === "Pending" ? (
+                            <button
+                              onClick={() => handleMarkPaid(bill)}
+                              disabled={markingPaid === bill.bill_id}
+                              className="text-xs text-green-400 hover:text-green-300 border border-green-400/30 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                            >
+                              {markingPaid === bill.bill_id ? "Updating..." : "Mark Paid"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-green-400 opacity-70 border border-green-400/20 px-3 py-1.5 rounded-lg">
+                              ✓ Paid
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -236,6 +306,119 @@ const BillsPage = () => {
 
         {/* Bill Detail Panel */}
         {selectedBill && (
+  <div className="w-96 flex-shrink-0">
+    <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5 sticky top-24">
+
+      {/* Header */}
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h3 className="text-white font-semibold">Bill Details</h3>
+          <p className="text-xs text-gray-500 mt-1">
+            Bill #{selectedBill.bill_id}
+          </p>
+        </div>
+        <button
+          onClick={() => setSelectedBill(null)}
+          className="text-gray-500 hover:text-white text-sm"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Basic Info */}
+      <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+        <div>
+          <p className="text-gray-500 text-xs">Patient</p>
+          <p className="text-white">
+            {selectedBill.patient_details?.full_name || "—"}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-gray-500 text-xs">Doctor</p>
+          <p className="text-white">{selectedBill.doctor_name || "—"}</p>
+        </div>
+
+        <div>
+          <p className="text-gray-500 text-xs">Prescription</p>
+          <p className="text-white">{selectedBill.prescription_code || "—"}</p>
+        </div>
+
+        <div>
+          <p className="text-gray-500 text-xs">Status</p>
+          <p className={selectedBill.payment_status === "Paid" ? "text-green-400" : "text-yellow-400"}>
+            {selectedBill.payment_status}
+          </p>
+        </div>
+      </div>
+
+      {/* Medicines */}
+      <div className="space-y-3 mb-4">
+        <p className="text-gray-400 text-xs uppercase">Medicines</p>
+
+        {selectedBill.items?.map((item, idx) => (
+          <div key={idx} className="bg-[#060d1a] border border-[#1e2d4a] rounded-lg p-3">
+
+            <p className="text-white font-medium">{item.medicine_name}</p>
+
+            <p className="text-xs text-gray-400">
+              Prescribed: {item.prescribed_quantity} | Given: {item.dispensed_quantity}
+            </p>
+
+            {item.remaining_quantity > 0 && (
+              <p className="text-xs text-yellow-400">
+                Remaining: {item.remaining_quantity}
+              </p>
+            )}
+
+            {item.is_partial && (
+              <p className="text-xs text-red-400 mt-1">
+                {item.note}
+              </p>
+            )}
+
+            <p className="text-xs text-gray-500 mt-1">
+              ₹{parseFloat(item.line_total || 0).toFixed(2)}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Total */}
+      <div className="border-t border-[#1e2d4a] pt-3 space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span className="text-gray-400">Subtotal</span>
+          <span className="text-white">₹{selectedBill.total_amount}</span>
+        </div>
+
+        <div className="flex justify-between">
+          <span className="text-gray-400">Discount</span>
+          <span className="text-white">₹{selectedBill.discount}</span>
+        </div>
+
+        <div className="flex justify-between font-semibold border-t border-[#1e2d4a] pt-2">
+          <span className="text-white">Final</span>
+          <span className="text-red-400">₹{selectedBill.final_amount}</span>
+        </div>
+      </div>
+
+      {/* ACTION BUTTON */}
+      {selectedBill.payment_status === "Pending" ? (
+        <button
+          onClick={() => handleMarkPaid(selectedBill)}
+          className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg"
+        >
+          Mark as Paid
+        </button>
+      ) : (
+        <div className="mt-4 text-center text-green-400 text-sm">
+          ✓ Already Paid
+        </div>
+      )}
+    </div>
+  </div>
+)}
+        {/* {selectedBill && (
           <div className="w-72 flex-shrink-0">
             <div className="bg-[#0d1629] border border-[#1e2d4a] rounded-xl p-5">
               <div className="flex items-center justify-between mb-4">
@@ -309,7 +492,7 @@ const BillsPage = () => {
               )}
             </div>
           </div>
-        )}
+        )} */}
       </div>
     </PharmacistLayout>
   );
