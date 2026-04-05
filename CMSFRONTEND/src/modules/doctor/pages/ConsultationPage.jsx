@@ -1,201 +1,34 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  getConsultationPage,
-  createConsultation,
-  createLabTestRequest,
-  createPrescription,
-  getMedicines,
-  getLabTests,
-  getLabResults,
-  markLabResultsViewed,
-} from "../api/doctorApi";
-import API from "../../../api";
 
-// ─── CARD COMPONENTS ─────────────────────────────────────────────
-const Card = ({ children, className = "" }) => (
-  <div className={`bg-[#0d1629] border border-[#1e2d4a] rounded-xl overflow-hidden ${className}`}>
-    {children}
-  </div>
-);
+import PatientInfoCard from "../components/consultationpage/PatientInfoCard";
+import CurrentConsultation from "../components/consultationpage/CurrentConsultation";
+import ActionPanel from "../components/consultationpage/ActionPanel";
+import LabRequestsPanel from "../components/consultationpage/LabRequestsPanel"; // 🔥 UPDATED
+import HistoryNavigation from "../components/consultationpage/HistoryNavigation";
+import HistoryDetailsPanel from "../components/consultationpage/HistoryDetailsPanel";
 
-const CardHeader = ({ title, subtitle }) => (
-  <div className="px-5 py-4 border-b border-[#1e2d4a]">
-    <h3 className="text-sm font-semibold text-white">{title}</h3>
-    {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
-  </div>
-);
+import { getConsultationPage, getLabResultsByConsultation } from "../api/doctorapi";
 
-// ─── PATIENT INFO CARD ────────────────────────────────────────────
-const PatientInfoCard = ({ patient, appointment }) => (
-  <Card className="h-full">
-    <CardHeader title="Patient Info" subtitle={`Token #${appointment?.token_number}`} />
-    <div className="p-5 space-y-3">
-      <div>
-        <p className="text-2xl font-bold text-white">
-          {patient?.first_name} {patient?.last_name}
-        </p>
-        <p className="text-sm text-gray-400 mt-1">
-          {patient?.gender} · {patient?.age ? `${patient.age} yrs` : "—"}
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: "Email", value: patient?.email },
-          { label: "Phone", value: patient?.phone },
-          { label: "Blood Group", value: patient?.blood_group || "—" },
-          { label: "Membership", value: patient?.membership_status },
-          { label: "Date of Birth", value: patient?.date_of_birth },
-          { label: "Address", value: patient?.address },
-        ].map(({ label, value }) => (
-          <div key={label}>
-            <p className="text-xs text-gray-500">{label}</p>
-            <p className="text-sm text-gray-300 truncate">{value || "—"}</p>
-          </div>
-        ))}
-      </div>
-      <div className="pt-2 border-t border-[#1e2d4a]">
-        <p className="text-xs text-gray-500 mb-1">Reason for Visit</p>
-        <p className="text-sm text-gray-200">{appointment?.reason}</p>
-      </div>
-      <div>
-        <p className="text-xs text-gray-500 mb-1">Appointment Time</p>
-        <p className="text-sm text-blue-400 font-mono">{appointment?.appointment_time}</p>
-      </div>
-    </div>
-  </Card>
-);
-
-// ─── CURRENT CONSULTATION CARD ────────────────────────────────────
-const CurrentConsultationCard = ({ consultation }) => (
-  <Card className="h-full">
-    <CardHeader title="Current Consultation" />
-    <div className="p-5">
-      {!consultation ? (
-        <div className="flex flex-col items-center justify-center h-40 text-gray-600">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-2 opacity-30">
-            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
-            <rect x="9" y="3" width="6" height="4" rx="1" />
-          </svg>
-          <p className="text-sm">No consultation recorded yet.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="inline-block bg-blue-400/10 text-blue-400 border border-blue-400/30 text-xs px-2 py-1 rounded font-mono">
-            {consultation.consultation_code}
-          </div>
-          {[
-            { label: "Vitals", value: consultation.vitals },
-            { label: "Symptoms", value: consultation.symptoms },
-            { label: "Diagnosis", value: consultation.diagnosis },
-            { label: "Advice", value: consultation.advice },
-          ].map(({ label, value }) =>
-            value ? (
-              <div key={label}>
-                <p className="text-xs text-gray-500 mb-0.5">{label}</p>
-                <p className="text-sm text-gray-200 bg-[#060d1a] rounded-lg px-3 py-2">{value}</p>
-              </div>
-            ) : null
-          )}
-        </div>
-      )}
-    </div>
-  </Card>
-);
-
-// ─── CONSULTATION FORM ────────────────────────────────────────────
-const ConsultationForm = ({ appointmentId, onSaved, onClose }) => {
-  const [form, setForm] = useState({ symptoms: "", diagnosis: "", vitals: "", advice: "" });
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
-
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    setErrors({ ...errors, [e.target.name]: "" });
-  };
-
-  const handleSubmit = async () => {
-    const e = {};
-    if (!form.symptoms.trim()) e.symptoms = "Required";
-    if (!form.diagnosis.trim()) e.diagnosis = "Required";
-    if (!form.vitals.trim()) e.vitals = "Required";
-    if (Object.keys(e).length > 0) { setErrors(e); return; }
-
-    setLoading(true);
-    try {
-      await createConsultation({ appointment: appointmentId, ...form });
-      onSaved();
-    } catch (err) {
-      const data = err?.response?.data;
-      if (data && typeof data === "object") {
-        const se = {};
-        Object.entries(data).forEach(([k, v]) => { se[k] = Array.isArray(v) ? v[0] : String(v); });
-        setErrors(se);
-      } else {
-        setErrors({ general: "Failed to save consultation." });
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const inputCls = (field) =>
-    `w-full bg-[#060d1a] border ${errors[field] ? "border-red-500" : "border-[#1e2d4a]"} rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-400 transition resize-none`;
-
+// 🔥 Rainbow Wrapper (same)
+const RainbowCard = ({ children, className = "" }) => {
   return (
-    <Card>
-      <CardHeader title="Add Consultation" subtitle="Fill vitals, symptoms, diagnosis" />
-      <div className="p-5 space-y-4">
-        {errors.general && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{errors.general}</div>
-        )}
-        {errors.non_field_errors && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-4 py-3 rounded-lg">{errors.non_field_errors}</div>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Vitals *</label>
-            <textarea name="vitals" rows={2} value={form.vitals} onChange={handleChange}
-              placeholder="BP: 120/80, Temp: 98.6°F, Pulse: 72 bpm…"
-              className={inputCls("vitals")} />
-            {errors.vitals && <p className="text-red-400 text-xs mt-1">{errors.vitals}</p>}
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Symptoms *</label>
-            <textarea name="symptoms" rows={2} value={form.symptoms} onChange={handleChange}
-              placeholder="Chief complaints…"
-              className={inputCls("symptoms")} />
-            {errors.symptoms && <p className="text-red-400 text-xs mt-1">{errors.symptoms}</p>}
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Diagnosis *</label>
-            <textarea name="diagnosis" rows={2} value={form.diagnosis} onChange={handleChange}
-              placeholder="Clinical diagnosis…"
-              className={inputCls("diagnosis")} />
-            {errors.diagnosis && <p className="text-red-400 text-xs mt-1">{errors.diagnosis}</p>}
-          </div>
-          <div>
-            <label className="text-xs text-gray-400 mb-1 block">Advice</label>
-            <textarea name="advice" rows={2} value={form.advice} onChange={handleChange}
-              placeholder="Rest, diet, follow-up instructions…"
-              className={inputCls("advice")} />
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="px-5 py-2 text-sm text-gray-400 hover:text-white border border-[#1e2d4a] rounded-lg transition">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSubmit} disabled={loading}
-            className="px-5 py-2 text-sm font-semibold bg-blue-500 hover:bg-blue-400 text-white rounded-lg transition disabled:opacity-50 flex items-center gap-2">
-            {loading && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-            {loading ? "Saving…" : "Save Consultation"}
-          </button>
-        </div>
+    <div className={`relative p-[2px] rounded-xl ${className}`}>
+      <div
+        className="absolute inset-0 rounded-xl blur-sm opacity-70"
+        style={{
+          background:
+            "linear-gradient(45deg, red, orange, yellow, lime, cyan, blue, violet, red)",
+        }}
+      />
+      <div className="relative rounded-xl bg-[#1e293b] h-full">
+        {children}
       </div>
-    </Card>
+    </div>
   );
 };
 
+<<<<<<< HEAD
 // ─── LAB TEST REQUEST FORM ────────────────────────────────────────
 const LabTestForm = ({ consultationId, doctorId, onSaved, onClose }) => {
   const [availableTests, setAvailableTests] = useState([]);
@@ -634,6 +467,8 @@ const HistoryPanel = ({ consultations, prescriptions, labResults }) => {
 };
 
 // ─── MAIN CONSULTATION PAGE ───────────────────────────────────────
+=======
+>>>>>>> 96fcda69213be4f901c7b5eebbf7d4d8624dc9c5
 const ConsultationPage = () => {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
@@ -641,80 +476,77 @@ const ConsultationPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeForm, setActiveForm] = useState(null);
-  const [completing, setCompleting] = useState(false);
-  const [completeError, setCompleteError] = useState("");
-  const [completeSuccess, setCompleteSuccess] = useState(false);
-  const [localLabViewed, setLocalLabViewed] = useState(false);
+  const [activeTab, setActiveTab] = useState("consultations");
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await getConsultationPage(appointmentId);
-      setData(res.data);
-      setLocalLabViewed(res.data?.lab_results_viewed || false);
-    } catch (err) {
-      setError(err?.response?.data?.message || "Failed to load consultation data.");
-    } finally {
-      setLoading(false);
+  // 🔥 NEW STATE
+  const [labRequests, setLabRequests] = useState([]);
+  const [previousLabResults, setPreviousLabResults] = useState([]);
+
+  // 🔥 FETCH DATA
+  const fetchConsultationData = async (isPolling = false) => {
+  try {
+    if (!isPolling) setLoading(true);
+
+    const result = await getConsultationPage(appointmentId);
+    setData(result.data);
+
+    setLabRequests(result.data.lab_requests || []);
+
+    if (result.data.current_consultation) {
+      localStorage.setItem(
+        "consultationId",
+        result.data.current_consultation.id
+      );
     }
-  };
+
+    // 🔥 FETCH PREVIOUS LAB RESULTS
+    if (result.data.previous_consultations && result.data.previous_consultations.length > 0) {
+      const prevConsultations = result.data.previous_consultations;
+      const labResultPromises = prevConsultations.map(c => getLabResultsByConsultation(c.id));
+      const res = await Promise.all(labResultPromises);
+      const prevLabResults = res.flatMap((r) => r.results || []);
+      setPreviousLabResults(prevLabResults);
+    } else {
+      setPreviousLabResults([]);
+    }
+
+  } catch (err) {
+    setError(err);
+  } finally {
+    if (!isPolling) setLoading(false);
+  }
+};
 
   useEffect(() => {
-    if (appointmentId) fetchData();
+    if (appointmentId) fetchConsultationData();
   }, [appointmentId]);
 
-  const handleFormSaved = () => {
-    setActiveForm(null);
-    fetchData();
-  };
+  // 🔥 POLLING (NEW)
+  useEffect(() => {
+    const hasPending = labRequests.some(
+      (req) => req.status === "Pending"
+    );
 
-  const handleCompleteConsultation = async () => {
-    setCompleting(true);
-    setCompleteError("");
-    try {
-      await API.patch(`/api/doctor/consultation/${appointmentId}/complete/`);
-      setCompleteSuccess(true);
-      fetchData();
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.detail ||
-        "Failed to complete consultation.";
-      setCompleteError(msg);
-    } finally {
-      setCompleting(false);
+    let interval;
+
+    if (hasPending) {
+      interval = setInterval(() => {
+  fetchConsultationData(true); // ✅ no blinking
+}, 5000);
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#060d1a] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-gray-400 text-sm">Loading consultation…</p>
-        </div>
-      </div>
-    );
-  }
+    return () => clearInterval(interval);
+  }, [labRequests]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-[#060d1a] flex items-center justify-center p-6">
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-6 py-4 rounded-xl text-sm max-w-md text-center">
-          <p className="font-semibold mb-2">Error</p>
-          <p>{error}</p>
-          <button onClick={() => navigate("/doctor/dashboard")} className="mt-4 text-xs text-gray-400 hover:text-white underline">
-            ← Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // 🔥 DERIVED STATES
+  const hasConsultation = !!data?.current_consultation;
+  const hasPrescription = data?.appointment?.status === "Completed";
 
-  if (!data) return null;
+  const hasPendingLabs = labRequests.some(
+    (r) => r.status === "Pending"
+  );
 
+<<<<<<< HEAD
   const hasConsultation = !!data.current_consultation;
   const consultationId = data.current_consultation?.id;
   const doctorId = data.appointment?.doctor;
@@ -738,78 +570,91 @@ const ConsultationPage = () => {
     (data.previous_prescriptions || []).some(
       (rx) => rx.consultation === consultationId || rx.consultation_id === consultationId
     );
+=======
+  if (loading) return <div className="text-white p-5">Loading...</div>;
+  if (error) return <div className="text-red-400 p-5">{error}</div>;
+  if (!data) return <div className="text-white p-5">No data found</div>;
+>>>>>>> 96fcda69213be4f901c7b5eebbf7d4d8624dc9c5
 
   return (
-    <div className="min-h-screen bg-[#060d1a] p-4 md:p-6">
-      {/* Back + header */}
-      <div className="flex items-center gap-3 mb-5">
-        <button
-          type="button"
-          onClick={() => navigate("/doctor/dashboard")}
-          className="text-gray-500 hover:text-white transition text-sm flex items-center gap-1"
-        >
-          ← Dashboard
-        </button>
-        <span className="text-gray-600">/</span>
-        <span className="text-gray-300 text-sm">
-          Consultation — Token #{data.appointment?.token_number}
-        </span>
-        {isCompleted && (
-          <span className="ml-2 text-xs bg-green-400/10 text-green-400 border border-green-400/30 px-2 py-0.5 rounded-full font-medium">
-            ✓ Completed
-          </span>
-        )}
+    <div className="p-4 md:p-5 flex flex-col gap-4 md:gap-5 text-white min-h-screen bg-gradient-to-br from-[#020617] via-[#020617] to-[#0f172a]">
+
+      {/* 🔥 TOP */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1.4fr_1.2fr] gap-4 md:gap-5 h-auto lg:h-[520px]">
+
+        <RainbowCard className="h-full">
+          <PatientInfoCard
+            patient={data.patient}
+            appointment={data.appointment}
+          />
+        </RainbowCard>
+
+        <RainbowCard className="h-full">
+          <CurrentConsultation
+            consultation={data.current_consultation}
+          />
+        </RainbowCard>
+
+        <div className="flex flex-col gap-4 md:gap-5 h-full">
+
+          <RainbowCard>
+            <ActionPanel
+              hasConsultation={hasConsultation}
+              hasLabRequests={labRequests.length > 0}
+              hasPendingLabs={hasPendingLabs}
+              hasPrescription={hasPrescription}
+
+              onAddConsultation={() => {
+                if (!hasConsultation) {
+                  navigate(`/doctor/consultation/create/${appointmentId}`);
+                }
+              }}
+
+              onLabRequest={() => {
+                if (!hasConsultation) {
+                  alert("Create consultation first");
+                  return;
+                }
+                navigate(`/doctor/lab-request/${appointmentId}`);
+              }}
+
+              onPrescription={() => {
+                if (hasPendingLabs) {
+                  alert("Complete all lab requests first");
+                  return;
+                }
+                navigate(`/doctor/prescription/${appointmentId}`);
+              }}
+            />
+          </RainbowCard>
+
+          <RainbowCard className="flex-1 min-h-0">
+            <LabRequestsPanel labRequests={labRequests} />
+          </RainbowCard>
+
+        </div>
       </div>
 
-      {/* COMPLETE SUCCESS BANNER */}
-      {completeSuccess && (
-        <div className="mb-4 flex items-center gap-3 px-5 py-3.5 rounded-xl border bg-green-500/10 border-green-400/40 text-green-300">
-          <span className="text-xl">✅</span>
-          <p className="text-sm font-semibold">Consultation marked as Completed successfully.</p>
-        </div>
-      )}
+      {/* 🔥 BOTTOM */}
+      <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_2.2fr] gap-4 md:gap-5 h-auto lg:h-[350px]">
 
-      {/* COMPLETE ERROR */}
-      {completeError && (
-        <div className="mb-4 px-5 py-3 rounded-xl border bg-red-500/10 border-red-400/40 text-red-300 text-sm">
-          {completeError}
-        </div>
-      )}
+        <RainbowCard className="h-full">
+          <HistoryNavigation
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+          />
+        </RainbowCard>
 
-      {/* LAB RESULTS READY BANNER */}
-      {hasLabResults && (
-        <div className={`mb-4 flex items-center justify-between gap-4 px-5 py-3.5 rounded-xl border ${
-          hasCriticalResult
-            ? "bg-red-500/10 border-red-400/40 text-red-300"
-            : "bg-cyan-500/10 border-cyan-400/40 text-cyan-300"
-        }`}>
-          <div className="flex items-center gap-3">
-            <span className="text-xl">{hasCriticalResult ? "⚠️" : "✅"}</span>
-            <div>
-              <p className="text-sm font-semibold">
-                {hasCriticalResult ? "Critical Lab Results Available" : "Lab Results Ready"}
-              </p>
-              <p className="text-xs opacity-70 mt-0.5">
-                {labResults.length} result{labResults.length !== 1 ? "s" : ""} returned from the lab
-                {hasCriticalResult ? " — one or more are marked critical" : ""}
-                {labResultsViewed ? " · Reviewed ✓" : ""}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setActiveForm(activeForm === "labResults" ? null : "labResults")}
-            className={`flex-shrink-0 text-xs font-semibold px-4 py-2 rounded-lg border transition ${
-              hasCriticalResult
-                ? "bg-red-400/20 border-red-400/50 hover:bg-red-400/30 text-red-300"
-                : "bg-cyan-400/20 border-cyan-400/50 hover:bg-cyan-400/30 text-cyan-300"
-            }`}
-          >
-            {activeForm === "labResults" ? "Hide Results" : "View Results →"}
-          </button>
-        </div>
-      )}
+        <RainbowCard className="h-full overflow-y-auto">
+          <HistoryDetailsPanel
+            activeTab={activeTab}
+            consultations={data.previous_consultations}
+            prescriptions={data.previous_prescriptions}
+            previousLabResults={previousLabResults} // 🔥 FIXED
+          />
+        </RainbowCard>
 
+<<<<<<< HEAD
       {/* TOP SECTION */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4" style={{ minHeight: "340px" }}>
         <PatientInfoCard patient={data.patient} appointment={data.appointment} />
@@ -974,61 +819,10 @@ const ConsultationPage = () => {
             )}
           </div>
         </Card>
+=======
+>>>>>>> 96fcda69213be4f901c7b5eebbf7d4d8624dc9c5
       </div>
 
-      {/* ACTIVE FORMS */}
-      {activeForm === "consultation" && (
-        <div className="mb-4">
-          <ConsultationForm
-            appointmentId={parseInt(appointmentId)}
-            onSaved={handleFormSaved}
-            onClose={() => setActiveForm(null)}
-          />
-        </div>
-      )}
-
-      {activeForm === "lab" && consultationId && (
-        <div className="mb-4">
-          <LabTestForm
-            consultationId={consultationId}
-            doctorId={doctorId}
-            onSaved={handleFormSaved}
-            onClose={() => setActiveForm(null)}
-          />
-        </div>
-      )}
-
-      {activeForm === "labResults" && consultationId && (
-        <div className="mb-4">
-          <LabResultsPanel
-            consultationId={consultationId}
-            labRequestId={labRequestId}
-            labResultsViewed={labResultsViewed}
-            onClose={() => setActiveForm(null)}
-            onMarkedViewed={() => setLocalLabViewed(true)}
-          />
-        </div>
-      )}
-
-      {activeForm === "prescription" && consultationId && (
-        <div className="mb-4">
-          <PrescriptionForm
-            consultationId={consultationId}
-            doctorId={doctorId}
-            onSaved={handleFormSaved}
-            onClose={() => setActiveForm(null)}
-          />
-        </div>
-      )}
-
-      {/* HISTORY */}
-      <div style={{ height: "360px" }}>
-        <HistoryPanel
-          consultations={data.previous_consultations || []}
-          prescriptions={data.previous_prescriptions || []}
-          labResults={labResults}
-        />
-      </div>
     </div>
   );
 };
