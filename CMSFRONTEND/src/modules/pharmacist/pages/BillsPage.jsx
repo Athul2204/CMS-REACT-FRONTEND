@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import PharmacistLayout from "../components/PharmacistLayout";
 // import { getMedicineBills } from "../api/pharmacistApi";
 // import API from "../../../api";
@@ -16,7 +17,10 @@ const BillsPage = () => {
   const [filter, setFilter] = useState("all"); // "all" | "Pending" | "Paid"
   const [markingPaid, setMarkingPaid] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
-
+const [dateFilter, setDateFilter] = useState("all"); // all | today | yesterday | week
+const [search, setSearch] = useState("");
+  
+  const navigate = useNavigate();
   const fetchBills = () => {
     setLoading(true);
     getMedicineBills()
@@ -38,10 +42,70 @@ const BillsPage = () => {
   useEffect(() => {
     fetchBills();
   }, []);
+const isToday = (dateString) => {
+  if (!dateString) return false;
+  const d = new Date(dateString);
+  const today = new Date();
+  return d.toDateString() === today.toDateString();
+};
 
-  const filteredBills =
-    filter === "all" ? bills : bills.filter((b) => b.payment_status === filter);
+const isYesterday = (dateString) => {
+  if (!dateString) return false;
+  const d = new Date(dateString);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return d.toDateString() === yesterday.toDateString();
+};
 
+const isThisWeek = (dateString) => {
+  if (!dateString) return false;
+  const d = new Date(dateString);
+  const now = new Date();
+
+  const startOfWeek = new Date(now);
+  startOfWeek.setHours(0, 0, 0, 0);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday start
+
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+  return d >= startOfWeek && d < endOfWeek;
+};
+  // const filteredBills =
+  //   filter === "all" ? bills : bills.filter((b) => b.payment_status === filter);
+const filteredBills = bills.filter((bill) => {
+  // payment filter
+  const paymentMatch =
+    filter === "all" ? true : bill.payment_status === filter;
+
+  // date filter
+  const dateMatch =
+    dateFilter === "all"
+      ? true
+      : dateFilter === "today"
+      ? isToday(bill.created_at)
+      : dateFilter === "yesterday"
+      ? isYesterday(bill.created_at)
+      : dateFilter === "week"
+      ? isThisWeek(bill.created_at)
+      : true;
+
+  // search filter
+  const patientName =
+    bill.patient_details?.full_name?.toLowerCase() || "";
+  const dispenseId =
+    String(bill.dispense || bill.dispense_id || "").toLowerCase();
+  const billId = String(bill.bill_id || "").toLowerCase();
+  const q = search.trim().toLowerCase();
+
+  const searchMatch =
+    !q ||
+    patientName.includes(q) ||
+    dispenseId.includes(q) ||
+    billId.includes(q);
+
+  return paymentMatch && dateMatch && searchMatch;
+});
   const totalRevenue = bills
     .filter((b) => b.payment_status === "Paid")
     .reduce((sum, b) => sum + parseFloat(b.final_amount || 0), 0);
@@ -177,6 +241,27 @@ const BillsPage = () => {
         ))}
       </div>
 
+      <div className="flex flex-col md:flex-row gap-3 mb-4">
+  <input
+    type="text"
+    placeholder="Search by patient name, bill id, or dispense id..."
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    className="bg-[#0d1629] border border-[#1e2d4a] text-white text-sm rounded-xl px-4 py-2.5 focus:border-red-400/50 outline-none flex-1"
+  />
+
+  <select
+    value={dateFilter}
+    onChange={(e) => setDateFilter(e.target.value)}
+    className="bg-[#0d1629] border border-[#1e2d4a] text-white text-sm rounded-xl px-4 py-2.5 focus:border-red-400/50 outline-none"
+  >
+    <option value="all">All Dates</option>
+    <option value="today">Today</option>
+    <option value="yesterday">Yesterday</option>
+    <option value="week">This Week</option>
+  </select>
+</div>
+
       <div className="flex gap-6">
         {/* Bills table */}
         <div className={`${selectedBill ? "flex-1" : "w-full"} bg-[#0d1629] border border-[#1e2d4a] rounded-xl overflow-hidden`}>
@@ -186,6 +271,7 @@ const BillsPage = () => {
                 <tr className="border-b border-[#1e2d4a] text-gray-500 text-xs uppercase tracking-wider">
                   <th className="px-4 py-3 text-left">Bill #</th>
                   <th className="px-4 py-3 text-left">Dispense #</th>
+                  <th className="px-4 py-3 text-left">Patient</th>
                   <th className="px-4 py-3 text-left">Total</th>
                   <th className="px-4 py-3 text-left">Discount</th>
                   <th className="px-4 py-3 text-left">Final</th>
@@ -207,7 +293,7 @@ const BillsPage = () => {
                   ))
                 ) : filteredBills.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-500 py-12 text-sm">
+                    <td colSpan={9} className="text-center text-gray-500 py-12 text-sm">
                       No bills found.
                     </td>
                   </tr>
@@ -232,6 +318,9 @@ const BillsPage = () => {
                       </td>
                       <td className="px-4 py-3 text-gray-400 text-xs">
                         #{bill.dispense || bill.dispense_id}
+                      </td>
+                      <td className="px-4 py-3 text-white">
+                        {bill.patient_details?.full_name || "—"}
                       </td>
                       <td className="px-4 py-3 text-gray-300">₹{parseFloat(bill.total_amount || 0).toFixed(2)}</td>
                       <td className="px-4 py-3 text-gray-400">
@@ -280,7 +369,27 @@ const BillsPage = () => {
                           >
                             View
                           </button>
-
+                          {/* {selectedBill && (
+                          <button
+                            onClick={() => navigate(`/pharmacist/bills/${selectedBill.bill_id}/print`)}
+                            className={`w-full mt-4 ${
+                              selectedBill.payment_status === "Paid"
+                                ? "bg-blue-500 hover:bg-blue-600"
+                                : "bg-yellow-500 hover:bg-yellow-600"
+                            } text-white py-2 rounded-lg`}
+                          >
+                            {selectedBill.payment_status === "Paid"
+                              ? "Print Bill"
+                              : "Print (Unpaid)"}
+                          </button>
+                        )} */}
+                          <button
+                            onClick={() => navigate(`/pharmacist/bills/${bill.bill_id}/print`)}
+                            className="text-xs text-blue-400 hover:text-blue-300 border border-blue-400/30 px-3 py-1.5 rounded-lg transition"
+                          >
+                            Print
+                          </button>
+                    
                           {bill.payment_status === "Pending" ? (
                             <button
                               onClick={() => handleMarkPaid(bill)}
