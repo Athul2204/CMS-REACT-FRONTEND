@@ -655,7 +655,7 @@ import {
   createDispense,
   createMedicineBill,
 } from "../api/pharmacistApi";
-import API from "../../../api";
+//import API from "../../../api";
 
 // ─── PRESCRIPTIONS LIST ───────────────────────────────────────────────────────
 export const PrescriptionsPage = () => {
@@ -758,12 +758,40 @@ export const PrescriptionsPage = () => {
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const MAX_DISCOUNT_PERCENT = 50; // Maximum allowed discount: 50% of subtotal
 
+// const getPrescribedQty = (item) => {
+//   const freq = parseInt(item.frequency, 10) || 1;
+//   const duration = parseInt(item.duration, 10) || 1;
+//   return freq * duration;
+// };
+// const getPrescribedQty = (item) => {
+//   const freqMatch = item.frequency?.match(/\d+/); // extract number
+//   const freq = freqMatch ? parseInt(freqMatch[0], 10) : 1;
+
+//   const duration = parseInt(item.duration, 10) || 1;
+
+//   return freq * duration;
+// };
+const MAX_DISPENSE_DAYS = 30;
+
 const getPrescribedQty = (item) => {
-  const freq = parseInt(item.frequency, 10) || 1;
+  const freqMatch = item.frequency?.match(/\d+/);
+  const freq = freqMatch ? parseInt(freqMatch[0], 10) : 1;
+
   const duration = parseInt(item.duration, 10) || 1;
-  return freq * duration;
+  const allowedDuration = Math.min(duration, MAX_DISPENSE_DAYS);
+
+  return freq * allowedDuration;
 };
 
+const getAllowedDuration = (item) => {
+  const duration = parseInt(item.duration, 10) || 1;
+  return Math.min(duration, MAX_DISPENSE_DAYS);
+};
+
+const isDurationLimited = (item) => {
+  const duration = parseInt(item.duration, 10) || 1;
+  return duration > MAX_DISPENSE_DAYS;
+};
 // ─── DISPENSE PAGE ────────────────────────────────────────────────────────────
 export const DispensePage = () => {
   const { prescriptionCode } = useParams();
@@ -783,8 +811,8 @@ export const DispensePage = () => {
 
   // dispenseQty: { [medId]: { [batchId]: number } }
   const [dispenseQty, setDispenseQty] = useState({});
-  const [billingBlocked, setBillingBlocked] = useState(false);
-  const [billingMessage, setBillingMessage] = useState("");
+  // const [billingBlocked, setBillingBlocked] = useState(false);
+  // const [billingMessage, setBillingMessage] = useState("");
 
   useEffect(() => {
     getPrescriptionDetail(prescriptionCode)
@@ -792,29 +820,29 @@ export const DispensePage = () => {
         const data = res.data;
         setRx(data);
         
-        // ─── BILLING GATE ──────────────────────────────────────
-        // Check if the appointment's consultation bill is paid
-        if (data.appointment_id || data.appointment) {
-          const apptId = data.appointment_id || data.appointment;
-          try {
-            const billRes = await API.get(`/api/reception/appointments-by-date/?appointment_id=${apptId}`);
-            const appts = billRes.data?.data || billRes.data || [];
-            const appt = Array.isArray(appts)
-              ? appts.find((a) => a.appointment_id === apptId)
-              : null;
-            const bill = appt?.bill;
-            if (!bill || bill.status !== "Paid") {
-              setBillingBlocked(true);
-              setBillingMessage(
-                !bill
-                  ? "No consultation bill found for this patient. Please ensure billing is done by the receptionist before dispensing."
-                  : "The consultation bill for this patient is not yet paid. Medicines can only be dispensed after the bill is cleared."
-              );
-            }
-          } catch {
-            // If billing check fails, don't block (fail open)
-          }
-        }
+        // // ─── BILLING GATE ──────────────────────────────────────
+        // // Check if the appointment's consultation bill is paid
+        // if (data.appointment_id || data.appointment) {
+        //   const apptId = data.appointment_id || data.appointment;
+        //   try {
+        //     const billRes = await API.get(`/api/reception/appointments-by-date/?appointment_id=${apptId}`);
+        //     const appts = billRes.data?.data || billRes.data || [];
+        //     const appt = Array.isArray(appts)
+        //       ? appts.find((a) => a.appointment_id === apptId)
+        //       : null;
+        //     const bill = appt?.bill;
+        //     if (!bill || bill.status !== "Paid") {
+        //       setBillingBlocked(true);
+        //       setBillingMessage(
+        //         !bill
+        //           ? "No consultation bill found for this patient. Please ensure billing is done by the receptionist before dispensing."
+        //           : "The consultation bill for this patient is not yet paid. Medicines can only be dispensed after the bill is cleared."
+        //       );
+        //     }
+        //   } catch {
+        //     // If billing check fails, don't block (fail open)
+        //   }
+        // }
         // ──────────────────────────────────────────────────────
 
         if (data.items) {
@@ -1057,6 +1085,7 @@ export const DispensePage = () => {
         setSuccess("✓ Dispensed successfully! Bill created.");
         setTimeout(() => navigate("/pharmacist/prescriptions"), 2000);
       } catch (billErr) {
+        console.log("Bill create error:", billErr?.response?.data);
         // Dispense succeeded but bill failed — alert user and redirect to bills
         const d = billErr?.response?.data;
         const billMsg =
@@ -1070,19 +1099,62 @@ export const DispensePage = () => {
         );
         setSubmitting(false);
       }
-    } catch (err) {
-      const d = err?.response?.data;
-      const msg =
-        (Array.isArray(d?.items)
-          ? d.items.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join(", ")
-          : null) ||
-        d?.non_field_errors?.[0] ||
-        d?.detail ||
-        (typeof d === "object" ? JSON.stringify(d) : null) ||
-        "Failed to dispense.";
-      setError(msg);
-      setSubmitting(false);
-    }
+      } catch (err) {
+  console.log("Dispense create error full:", err?.response?.data);
+  console.log("Dispense non_field_errors:", err?.response?.data?.non_field_errors);
+  console.log("Dispense first error:", err?.response?.data?.non_field_errors?.[0]);
+
+  const d = err?.response?.data;
+  const rawMsg =
+    d?.non_field_errors?.[0] ||
+    (Array.isArray(d?.items)
+      ? d.items.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join(", ")
+      : null) ||
+    d?.detail ||
+    (typeof d === "object" ? JSON.stringify(d) : null) ||
+    "Failed to dispense.";
+
+  let msg = rawMsg;
+
+  if (
+    rawMsg?.toLowerCase().includes("consultation bill") &&
+    rawMsg?.toLowerCase().includes("not yet paid")
+  ) {
+    msg = "Consultation bill not paid. Please ask reception to clear the bill before dispensing medicines.";
+  }
+
+  setError(msg);
+  setSubmitting(false);
+}
+//     } catch (err) {
+//       //console.log("Dispense create error:", err?.response?.data);
+//       console.log("Dispense create error full:", err?.response?.data);
+// console.log("Dispense non_field_errors:", err?.response?.data?.non_field_errors);
+// console.log("Dispense first error:", err?.response?.data?.non_field_errors?.[0]);
+//       // const d = err?.response?.data;
+//       // const msg =
+//       //   (Array.isArray(d?.items)
+//       //     ? d.items.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join(", ")
+//       //     : null) ||
+//       //   d?.non_field_errors?.[0] ||
+//       //   d?.detail ||
+//       //   (typeof d === "object" ? JSON.stringify(d) : null) ||
+//       //   "Failed to dispense.";
+//       // setError(msg);
+//       // setSubmitting(false);
+//        const d = err?.response?.data;
+//         const msg =
+//           d?.non_field_errors?.[0] ||
+//           (Array.isArray(d?.items)
+//             ? d.items.map((e) => (typeof e === "string" ? e : JSON.stringify(e))).join(", ")
+//             : null) ||
+//           d?.detail ||
+//           (typeof d === "object" ? JSON.stringify(d) : null) ||
+//           "Failed to dispense.";
+
+//         setError(msg);
+//         setSubmitting(false);
+//     }
   };
 
   // ── Loading / not-found ───────────────────────────────────────────────────
@@ -1137,7 +1209,7 @@ export const DispensePage = () => {
       )}
 
       {/* ─── BILLING GATE BANNER ─── */}
-      {billingBlocked && (
+      {/* {billingBlocked && (
         <div className="mb-5 flex items-start gap-3 px-5 py-4 rounded-xl border bg-red-500/10 border-red-400/40 text-red-300">
           <span className="text-2xl leading-none mt-0.5">🚫</span>
           <div>
@@ -1146,7 +1218,7 @@ export const DispensePage = () => {
             <p className="text-xs text-red-400/60 mt-1">Please contact the receptionist to complete billing first.</p>
           </div>
         </div>
-      )}
+      )} */}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -1246,17 +1318,33 @@ export const DispensePage = () => {
                 <div className="px-5 py-4 border-b border-[#1e2d4a] flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="text-white font-semibold">{item.medicine_name}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    {/* <p className="text-xs text-gray-500 mt-0.5">
                       {item.dosage} · {item.frequency}x/day · {item.duration} days
-                    </p>
+                    </p> */}
+                    
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {item.dosage} · {item.frequency} · {item.duration} day prescription
+                      </p>
+
+                      {isDurationLimited(item) && (
+                        <p className="text-xs text-yellow-400 mt-1">
+                          Only 30 days can be dispensed now. Quantity is limited to {getAllowedDuration(item)} days.
+                        </p>
+                      )}
                     {item.instructions && (
                       <p className="text-xs text-gray-400 mt-0.5">ℹ {item.instructions}</p>
                     )}
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-xs text-gray-500">Prescribed</p>
+                    {/* <p className="text-xs text-gray-500">Prescribed</p> */}
+                    <p className="text-xs text-gray-500">
+                    {isDurationLimited(item) ? "Allowed Now" : "Prescribed"}
+                  </p>
                     <p className="text-cyan-400 font-bold text-2xl leading-none">{required}</p>
-                    <p className="text-xs text-gray-600">units</p>
+                    {/* <p className="text-xs text-gray-600">units</p> */}
+                    <p className="text-xs text-gray-600">
+                    {isDurationLimited(item) ? "max 30 days" : "units"}
+                  </p>
                   </div>
                 </div>
 
@@ -1395,6 +1483,11 @@ export const DispensePage = () => {
                   <div key={medId} className="flex items-center justify-between text-xs gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-gray-300 truncate">{item.medicine_name}</p>
+                      {isDurationLimited(item) && (
+                        <p className="text-yellow-400 text-[11px]">
+                          Limited to 30 days
+                        </p>
+                      )}
                       {/* <p className={`${
                         allocated === 0 ? "text-gray-600" :
                         allocated < required ? "text-yellow-400" :
@@ -1492,13 +1585,13 @@ export const DispensePage = () => {
 
             <button
               onClick={handleDispense}
-              disabled={submitting || !canSubmit || billingBlocked}
+              disabled={submitting || !canSubmit }
               className="w-full bg-red-500 hover:bg-red-600 disabled:bg-red-900/40 disabled:text-red-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition text-sm"
             >
               {submitting ? "Processing..." : "Confirm Dispense & Create Bill"}
             </button>
 
-            {billingBlocked && (
+            {/* {billingBlocked && (
               <p className="text-xs text-red-400 mt-2 text-center">
                 🚫 Billing must be paid before dispensing
               </p>
@@ -1507,7 +1600,12 @@ export const DispensePage = () => {
               <p className="text-xs text-yellow-400 text-center">
                 {discountError ? "⚠ Fix discount to proceed" : "⚠ Resolve issues to proceed"}
               </p>
-            )}
+            )} */}
+            {!canSubmit && (
+  <p className="text-xs text-yellow-400 text-center">
+    {discountError ? "⚠ Fix discount to proceed" : "⚠ Resolve issues to proceed"}
+  </p>
+)}
           </div>
         </div>
 
